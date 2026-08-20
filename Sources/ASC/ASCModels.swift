@@ -119,18 +119,18 @@ struct FeedbackCrashAttributes: Decodable, Sendable {
 
 extension JSONDecoder {
     /// Apple은 ISO8601을 소수점 초가 있는 형태와 없는 형태를 섞어서 준다.
+    ///
+    /// `ISO8601DateFormatter`는 클래스라 Sendable이 아니어서 `@Sendable` 디코딩 클로저에
+    /// 캡처할 수 없다. 값 타입인 `Date.ISO8601FormatStyle`을 쓴다.
     static let asc: JSONDecoder = {
         let decoder = JSONDecoder()
-        let withFraction = ISO8601DateFormatter()
-        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let plain = ISO8601DateFormatter()
-        plain.formatOptions = [.withInternetDateTime]
+        let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
+        let plain = Date.ISO8601FormatStyle()
 
         decoder.dateDecodingStrategy = .custom { decoder in
             let raw = try decoder.singleValueContainer().decode(String.self)
-            if let date = withFraction.date(from: raw) ?? plain.date(from: raw) {
-                return date
-            }
+            if let date = try? withFraction.parse(raw) { return date }
+            if let date = try? plain.parse(raw) { return date }
             throw DecodingError.dataCorrupted(
                 .init(codingPath: decoder.codingPath, debugDescription: "날짜 형식을 알 수 없음: \(raw)"))
         }
