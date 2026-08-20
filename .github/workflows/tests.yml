@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: XcodeGen 설치
+        run: brew install xcodegen
+
+      - name: 프로젝트 생성
+        run: xcodegen generate
+
+      # DEVELOPMENT_TEAM이 비어 있어도 macOS 디버그 빌드는 애드혹 서명으로 통과한다.
+      - name: 테스트
+        run: |
+          xcodebuild test \
+            -project BetaCue.xcodeproj \
+            -scheme BetaCue \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- \
+            | xcpretty && exit ${PIPESTATUS[0]}
