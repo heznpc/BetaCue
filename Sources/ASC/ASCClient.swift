@@ -98,11 +98,28 @@ actor ASCClient {
         }
     }
 
-    @discardableResult
+    /// 실패해도 전체를 무너뜨리면 안 되는 부수 조회용. 오류는 nil로 접는다.
+    func getOrNil<T: Decodable>(_ path: String, as type: T.Type = T.self) async -> T? {
+        try? await get(path, as: type)
+    }
+
     func post<T: Decodable>(_ path: String, body: Encodable, as type: T.Type) async throws -> T {
         let encoded = try JSONEncoder().encode(AnyEncodable(body))
         let data = try await send(path: path, method: "POST", body: encoded)
         return try JSONDecoder.asc.decode(T.self, from: data)
+    }
+
+    /// 관계 생성처럼 성공 시 204 No Content를 주는 요청.
+    ///
+    /// 제네릭 `post`로 부르면 본문이 비어 있어 디코딩에서 실패한다 — 성공했는데 실패로 보인다.
+    func postNoContent(_ path: String, body: Encodable) async throws {
+        let encoded = try JSONEncoder().encode(AnyEncodable(body))
+        _ = try await send(path: path, method: "POST", body: encoded)
+    }
+
+    func deleteNoContent(_ path: String, body: Encodable) async throws {
+        let encoded = try JSONEncoder().encode(AnyEncodable(body))
+        _ = try await send(path: path, method: "DELETE", body: encoded)
     }
 
     func delete(_ path: String) async throws {

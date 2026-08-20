@@ -23,7 +23,8 @@ struct AppDetailView: View {
     }
 
     private var header: some View {
-        let state = app.state
+        let status = app.status
+        let state = status.state
         return VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Image(systemName: state.severity.symbol)
@@ -42,6 +43,31 @@ struct AppDetailView: View {
             Text(state.description)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+
+            // "새 버전 됐나"와 "지금 받을 수 있나"는 서로 다른 질문이다.
+            if let testable = status.testable {
+                Label {
+                    Text(status.hasOlderTestableBuild
+                         ? "지금은 \(testable.displayVersion)을(를) 테스트할 수 있습니다"
+                         : "지금 설치할 수 있습니다")
+                    + Text(status.audience.map { " · \($0)" } ?? "")
+                        .foregroundStyle(.secondary)
+                } icon: {
+                    Image(systemName: "checkmark.circle.fill")
+                }
+                .font(.callout)
+                .foregroundStyle(.green)
+            }
+
+            if app.isPartial {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(app.partialErrors, id: \.self) { problem in
+                        Label(problem, systemImage: "wifi.exclamationmark")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
 
             if let blocker = state.blocker {
                 Label(blocker, systemImage: "exclamationmark.triangle")
@@ -78,17 +104,38 @@ struct AppDetailView: View {
         }
     }
 
+    /// 앱에 그룹이 있다는 것과 **이 빌드가 그 그룹에 연결됐다**는 건 다른 사실이다.
+    /// 둘을 섞으면 "누가 받을 수 있나"에 자신 있게 틀린 답을 하게 된다.
     private var distribution: some View {
         Section2("누가 테스트할 수 있나") {
             if app.groups.isEmpty {
-                Text("연결된 그룹이 없습니다.").foregroundStyle(.secondary)
+                Text("테스터 그룹이 없습니다.").foregroundStyle(.secondary)
             } else {
+                let assigned = app.latestBuild?.assignedGroupIDs ?? []
                 ForEach(app.groups) { group in
-                    LabeledContent(group.isInternal ? "내부 · \(group.name)"
-                                                    : "외부 · \(group.name)") {
-                        Text(group.testerCount == 0 ? "없음" : "\(group.testerCount)명")
+                    let isOn = assigned.contains(group.id)
+                    LabeledContent {
+                        HStack(spacing: 6) {
+                            if group.publicLinkEnabled {
+                                Image(systemName: "link").foregroundStyle(.blue)
+                            }
+                            Text(group.testerCount == 0 ? "없음" : "\(group.testerCount)명")
+                                .foregroundStyle(isOn ? .primary : .secondary)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
+                                .foregroundStyle(isOn ? .green : .secondary)
+                            Text("\(group.isInternal ? "내부" : "외부") · \(group.name)")
+                        }
                     }
+                    .font(.callout)
                 }
+                Text("체크 표시는 최신 빌드가 그 그룹에 연결됐다는 뜻입니다.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            if let count = app.latestBuild?.individualTesterCount, count > 0 {
+                LabeledContent("개별 초대", value: "\(count)명").font(.callout)
             }
             // 설치 여부는 신뢰 가능한 데이터가 없어 표시하지 않는다. (명세 §28)
         }
@@ -112,9 +159,12 @@ struct AppDetailView: View {
     private var appleDetails: some View {
         DisclosureGroup("Apple 원본 정보", isExpanded: $showsRawState) {
             VStack(alignment: .leading, spacing: 5) {
-                LabeledContent("상태 ID", value: app.state.id.rawValue)
+                LabeledContent("상태 ID", value: app.status.state.id.rawValue)
+                if let reason = app.status.state.reason {
+                    LabeledContent("원인 코드", value: reason)
+                }
                 LabeledContent("Bundle ID", value: app.bundleID)
-                ForEach(app.state.rawEvidence.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
+                ForEach(app.status.state.rawEvidence.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
                     LabeledContent(key, value: value)
                 }
                 Button("App Store Connect에서 열기") {

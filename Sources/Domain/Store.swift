@@ -42,8 +42,8 @@ final class Store {
 
     /// 처리 중인 빌드가 있으면 1분, 평소엔 5분, 조용하면 15분.
     private var pollInterval: TimeInterval {
-        if apps.contains(where: { $0.state.id == .buildProcessing }) { return 60 }
-        if apps.contains(where: { $0.state.severity == .warning }) { return 300 }
+        if apps.contains(where: { $0.status.state.id == .buildProcessing }) { return 60 }
+        if apps.contains(where: { $0.status.state.severity == .warning }) { return 300 }
         return apps.isEmpty ? 300 : 900
     }
 
@@ -78,12 +78,28 @@ final class Store {
         do {
             let appList: ASCList<AppAttributes> = try await client.get("/v1/apps?limit=200")
 
+            // 앱 하나가 실패해도 나머지는 갱신돼야 한다. 실패한 앱은 마지막 상태를 유지한다.
             var collected: [AppSnapshot] = []
-            try await withThrowingTaskGroup(of: AppSnapshot.self) { group in
+            var failedNames: [String] = []
+            await withTaskGroup(of: Result<AppSnapshot, Error>.self) { group in
                 for app in appList.data {
-                    group.addTask { try await Collector.loadApp(app, using: client) }
+                    group.addTask {
+                        do { return .success(try await Collector.loadApp(app, using: client)) }
+                        catch { return .failure(AppLoadFailure(name: app.attributes.name, underlying: error)) }
+                    }
                 }
-                for try await snapshot in group { collected.append(snapshot) }
+                for await result in group {
+                    switch result {
+                    case .success(let snapshot): collected.append(snapshot)
+                    case .failure(let error):
+                        let name = (error as? AppLoadFailure)?.name ?? "앱"
+                        failedNames.append(name)
+                        // 새로 못 읽었으면 직전 스냅샷을 그대로 둔다 — 화면이 비지 않게.
+                        if let stale = apps.first(where: { $0.name == name }) {
+                            collected.append(stale)
+                        }
+                    }
+                }
             }
             collected = Self.sorted(collected)
 
@@ -95,7 +111,9 @@ final class Store {
             notifyExpiringCertificates()
 
             lastRefresh = Date()
-            errorMessage = nil
+            errorMessage = failedNames.isEmpty
+                ? nil
+                : "\(failedNames.joined(separator: ", "))을(를) 읽지 못해 이전 상태를 표시합니다."
         } catch {
             errorMessage = (error as? ASCError)?.localizedDescription ?? error.localizedDescription
         }
@@ -104,7 +122,7 @@ final class Store {
     /// 조치가 필요한 것부터, 그다음 이름순. (명세 §13)
     private static func sorted(_ list: [AppSnapshot]) -> [AppSnapshot] {
         list.sorted {
-            let a = $0.state.severity, b = $1.state.severity
+            let a = $0.status.state.severity, b = $1.status.state.severity
             return a == b
                 ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
                 : a < b
@@ -115,15 +133,20 @@ final class Store {
 
     private func detectAndNotify(_ next: [AppSnapshot]) {
         for snapshot in next {
-            let current = snapshot.state
-            let previous = persistence.lastState(appID: snapshot.id)
-            guard previous != current.id else { continue }
+            // 부분 실패로 되돌려 쓴 이전 스냅샷은 전이로 치지 않는다.
+            guard !snapshot.isPartial || snapshot.fetchedAt > (lastRefresh ?? .distantPast) else {
+                continue
+            }
+            let current = snapshot.status.state
+            let previous = persistence.lastFingerprint(appID: snapshot.id)
+            guard previous?.fingerprint != current.fingerprint else { continue }
 
-            persistence.recordTransition(appID: snapshot.id, from: previous, to: current.id)
+            persistence.recordTransition(appID: snapshot.id, from: previous?.state,
+                                         to: current.id, fingerprint: current.fingerprint)
 
             // 첫 조회에서는 알리지 않는다. 알림이 한꺼번에 쏟아지는 것을 막는다.
-            guard let previous else { continue }
-            guard let message = notificationText(app: snapshot, from: previous, to: current)
+            guard let previousState = previous?.state else { continue }
+            guard let message = notificationText(app: snapshot, from: previousState, to: current)
             else { continue }
             Notifier.post(title: message.title, body: message.body)
         }
@@ -145,6 +168,10 @@ final class Store {
 
         case (.buildProcessing, .buildReadyNotDistributed):
             return ("\(app.name) 배포 대상 없음", to.blocker ?? to.description)
+
+        case (_, .buildInvalid) where app.status.testable != nil:
+            let alive = app.status.testable?.displayVersion ?? ""
+            return ("\(app.name) 새 빌드 거부됨", "\(alive)은(는) 계속 테스트할 수 있습니다.")
 
         case (.externalReviewPending, .externalTestingReady):
             return ("\(app.name) 외부 테스트 승인됨", "외부 테스터에게 배포할 수 있습니다.")
@@ -175,9 +202,41 @@ final class Store {
         }
     }
 
+    // MARK: - 명령 (명세 §25)
+
+    /// 진행 중인 명령. 버튼 비활성화와 진행 표시에 쓴다.
+    private(set) var runningCommand: String?
+
+    /// 빌드를 그룹에 연결한다. v0에서 유일한 쓰기 동작이다. (명세 §26)
+    func distribute(build: BuildSnapshot, of app: AppSnapshot, to groups: [GroupSnapshot]) {
+        guard let client, runningCommand == nil else { return }
+        runningCommand = app.id
+        Task { [weak self] in
+            defer { self?.runningCommand = nil }
+            do {
+                try await Commands.assign(build: build.id, toGroups: groups.map(\.id), using: client)
+                await self?.refreshNow()
+            } catch {
+                self?.errorMessage = (error as? ASCError)?.localizedDescription
+                    ?? error.localizedDescription
+            }
+        }
+    }
+
+    /// 이 빌드를 붙일 후보 그룹. 이미 붙어 있는 곳은 뺀다.
+    func distributionTargets(for build: BuildSnapshot, in app: AppSnapshot) -> [GroupSnapshot] {
+        app.groups.filter { !build.assignedGroupIDs.contains($0.id) }
+    }
+
     // MARK: - 조회 보조
 
     func transitions(for app: AppSnapshot) -> [StateStore.Transition] {
         persistence.transitions(appID: app.id)
     }
+}
+
+/// 어느 앱이 실패했는지 알아야 그 앱만 이전 상태로 되돌릴 수 있다.
+struct AppLoadFailure: Error {
+    var name: String
+    var underlying: Error
 }

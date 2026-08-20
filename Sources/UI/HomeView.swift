@@ -70,12 +70,19 @@ private struct AppRow: View {
     let store: Store
 
     var body: some View {
-        let state = app.state
+        let status = app.status
+        let state = status.state
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 7) {
                 Image(systemName: state.severity.symbol)
                     .foregroundStyle(state.severity.tint)
                 Text(app.name).font(.headline)
+                if app.isPartial {
+                    Image(systemName: "wifi.exclamationmark")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help("일부 정보를 읽지 못했습니다")
+                }
                 Spacer()
                 if let build = app.latestBuild {
                     Text(build.displayVersion)
@@ -87,6 +94,13 @@ private struct AppRow: View {
             Text(state.headline)
                 .font(.subheadline)
                 .foregroundStyle(state.severity == .warning ? state.severity.tint : .primary)
+
+            // 최신 빌드가 아직 못 나갔어도 이전 빌드가 살아 있으면 그 사실을 잃지 않는다.
+            if status.hasOlderTestableBuild, let alive = status.testable {
+                Label("\(alive.displayVersion)은(는) 계속 테스트 가능", systemImage: "checkmark.circle")
+                    .font(.caption)
+                    .foregroundStyle(.green)
+            }
 
             if let blocker = state.blocker {
                 Text(blocker)
@@ -105,28 +119,54 @@ private struct AppRow: View {
 }
 
 /// 다음 행동 버튼. v0에서는 두 가지뿐이다. (명세 §26)
+///
+/// 레이블은 실제로 하는 일과 일치해야 한다. 앱 안에서 배포할 수 없는 상황이면
+/// "배포"라고 쓰지 않고 App Store Connect로 넘긴다고 말한다.
 struct ActionButton: View {
     let action: NextAction
     let app: AppSnapshot
     let store: Store
 
+    /// 앱 안에서 바로 배포할 수 있는가 — 붙일 빌드와 받을 그룹이 둘 다 있어야 한다.
+    private var inAppDistribution: (build: BuildSnapshot, groups: [GroupSnapshot])? {
+        guard action == .assignBuildToGroup,
+              let build = app.latestBuild, build.isValid
+        else { return nil }
+        let targets = store.distributionTargets(for: build, in: app)
+            .filter(\.canReachSomeone)
+        return targets.isEmpty ? nil : (build, targets)
+    }
+
     var body: some View {
         Button {
             perform()
         } label: {
-            Label(action.title, systemImage: action.symbol)
-                .font(.caption)
+            Label(title, systemImage: symbol).font(.caption)
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
+        .disabled(store.runningCommand == app.id)
+    }
+
+    private var title: String {
+        guard action == .assignBuildToGroup else { return action.title }
+        guard let target = inAppDistribution else { return "App Store Connect에서 배포" }
+        return target.groups.count == 1
+            ? "\(target.groups[0].name)에 배포"
+            : "테스터에게 배포"
+    }
+
+    private var symbol: String {
+        inAppDistribution == nil && action == .assignBuildToGroup
+            ? "arrow.up.forward.app" : action.symbol
     }
 
     private func perform() {
-        switch action {
-        case .openInAppStoreConnect, .assignBuildToGroup:
-            // v0에서 배포 연결은 App Store Connect로 넘긴다. (명세 §26 ② escape hatch)
-            if let url = app.appStoreConnectURL { NSWorkspace.shared.open(url) }
+        if let target = inAppDistribution {
+            store.distribute(build: target.build, of: app, to: target.groups)
+            return
         }
+        if let url = app.appStoreConnectURL { NSWorkspace.shared.open(url) }
     }
 }
 

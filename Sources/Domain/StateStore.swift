@@ -36,11 +36,12 @@ final class StateStore: @unchecked Sendable {
             fetched_at REAL NOT NULL
         );
         CREATE TABLE IF NOT EXISTS state_transitions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            app_id     TEXT NOT NULL,
-            from_state TEXT,
-            to_state   TEXT NOT NULL,
-            at         REAL NOT NULL
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id      TEXT NOT NULL,
+            from_state  TEXT,
+            to_state    TEXT NOT NULL,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            at          REAL NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_transitions_app
             ON state_transitions(app_id, at DESC);
@@ -109,25 +110,42 @@ final class StateStore: @unchecked Sendable {
 
     // MARK: - 전이
 
-    /// 직전 상태를 돌려준다. 처음 보는 앱이면 nil — 최초 조회에서 알림이 쏟아지지 않게 한다.
-    func lastState(appID: String) -> AppStateID? {
+    struct LastState: Sendable {
+        var state: AppStateID
+        var fingerprint: String
+    }
+
+    /// 직전 상태와 지문. 처음 보는 앱이면 nil — 최초 조회에서 알림이 쏟아지지 않게 한다.
+    ///
+    /// 지문까지 비교해야 `ACTION_REQUIRED` 안에서 원인만 바뀐 변화를 놓치지 않는다.
+    func lastFingerprint(appID: String) -> LastState? {
         queue.sync {
             var stmt: OpaquePointer?
-            let sql = "SELECT to_state FROM state_transitions WHERE app_id = ? ORDER BY at DESC LIMIT 1"
+            let sql = """
+            SELECT to_state, fingerprint FROM state_transitions
+            WHERE app_id = ? ORDER BY at DESC LIMIT 1
+            """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return nil }
             defer { sqlite3_finalize(stmt) }
             sqlite3_bind_text(stmt, 1, appID, -1, SQLITE_TRANSIENT)
             guard sqlite3_step(stmt) == SQLITE_ROW,
-                  let raw = sqlite3_column_text(stmt, 0)
+                  let raw = sqlite3_column_text(stmt, 0),
+                  let state = AppStateID(rawValue: String(cString: raw))
             else { return nil }
-            return AppStateID(rawValue: String(cString: raw))
+            let fingerprint = sqlite3_column_text(stmt, 1).map { String(cString: $0) } ?? ""
+            return LastState(state: state, fingerprint: fingerprint)
         }
     }
 
-    func recordTransition(appID: String, from: AppStateID?, to: AppStateID, at: Date = Date()) {
+    func recordTransition(appID: String, from: AppStateID?, to: AppStateID,
+                          fingerprint: String, at: Date = Date())
+    {
         queue.sync {
             var stmt: OpaquePointer?
-            let sql = "INSERT INTO state_transitions (app_id, from_state, to_state, at) VALUES (?, ?, ?, ?)"
+            let sql = """
+            INSERT INTO state_transitions (app_id, from_state, to_state, fingerprint, at)
+            VALUES (?, ?, ?, ?, ?)
+            """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
             defer { sqlite3_finalize(stmt) }
             sqlite3_bind_text(stmt, 1, appID, -1, SQLITE_TRANSIENT)
@@ -137,7 +155,8 @@ final class StateStore: @unchecked Sendable {
                 sqlite3_bind_null(stmt, 2)
             }
             sqlite3_bind_text(stmt, 3, to.rawValue, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_double(stmt, 4, at.timeIntervalSince1970)
+            sqlite3_bind_text(stmt, 4, fingerprint, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_double(stmt, 5, at.timeIntervalSince1970)
             sqlite3_step(stmt)
         }
     }

@@ -29,6 +29,13 @@ App Store Connect API
         ↓  SwiftUI        메뉴바 + 창
 ```
 
+**"됐나"와 "지금 받을 수 있나"는 다른 질문이다.** 최신 빌드가 처리 중이어도 이전 빌드로
+계속 테스트할 수 있다. 상태를 하나로 합치면 그 사실을 잃으므로 두 축으로 나눠 판정한다.
+
+**그룹이 있다는 것과 이 빌드가 그 그룹에 연결됐다는 건 다른 사실이다.** 앱에 그룹이 있어도
+빌드가 안 붙어 있으면 아무도 못 받는다. 개별 초대나 공개 링크로 배포됐을 수도 있다.
+그래서 빌드별 연결 관계와 개별 테스터 수를 따로 수집한다.
+
 **모르면 추측하지 않는다.** Apple이 예상 못 한 값을 주면 `UNKNOWN`으로 떨어뜨리고
 원본을 그대로 보여준 뒤 App Store Connect로 넘긴다.
 
@@ -50,6 +57,10 @@ App Store Connect API
 | `EXTERNAL_TESTING_READY` | 내부·외부 테스트 가능 | — |
 | `ACTION_REQUIRED` | 조치 필요 | ASC에서 확인 |
 | `UNKNOWN` | 상태 판별 불가 | ASC에서 확인 |
+
+같은 상태 안에서도 원인을 구분한다(`MISSING_EXPORT_COMPLIANCE`, `EXPIRED`, `BETA_REJECTED`,
+`NO_GROUPS`, `BUILD_NOT_ASSIGNED`, `GROUPS_EMPTY`). 전이 판정은 상태 ID가 아니라
+`상태 + 원인 + 빌드 ID` 지문으로 하므로, 같은 칸 안에서 원인만 바뀌어도 알림이 나간다.
 
 ## 알림
 
@@ -91,10 +102,18 @@ xcodebuild -project BetaCue.xcodeproj -scheme BetaCue test
 ```
 
 App Sandbox는 꺼져 있다. 홈 디렉터리의 키 파일을 읽어야 하기 때문이다.
+현재 지원하는 자격증명은 팀 API 키뿐이다. 개인(Individual) 키는 JWT에서 `iss` 대신 `sub`를
+쓰므로 그대로는 동작하지 않는다.
+
+## 실패 허용
+
+앱 하나의 조회가 실패해도 나머지 앱은 갱신된다. 실패한 앱은 마지막으로 성공한 상태를 유지하고
+어떤 항목을 못 읽었는지 상세 화면에 표시한다. 상태 모니터링 도구가 한 곳의 404로
+전체를 멈추면 안 된다.
 
 ## v0 범위 밖
 
-테스터 CRUD, 업로드 파이프라인 자동화, 인증서 자동 발급, App Store 제출 전체 흐름,
+빌드를 그룹에 연결하는 것 외의 조작 — 테스터 CRUD, 업로드 파이프라인 자동화, 인증서 자동 발급, App Store 제출 전체 흐름,
 AI 크래시 분석, 팀·계정·결제. 개인용 도구이므로 필요해지면 그때 넣는다.
 
 `betaTesterUsages`가 현재 환경에서 404를 반환하고 테스터 `state`도 `null`로 오기 때문에

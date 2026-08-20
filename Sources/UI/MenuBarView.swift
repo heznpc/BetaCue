@@ -46,7 +46,8 @@ struct MenuBarView: View {
     }
 
     private func row(_ app: AppSnapshot) -> some View {
-        let state = app.state
+        let status = app.status
+        let state = status.state
         return Button {
             openWindow(id: "main")
         } label: {
@@ -55,7 +56,9 @@ struct MenuBarView: View {
                     .foregroundStyle(state.severity.tint)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.name).font(.callout.weight(.medium))
-                    Text(state.headline)
+                    Text(status.hasOlderTestableBuild
+                         ? "\(state.headline) · 이전 버전 테스트 가능"
+                         : state.headline)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)

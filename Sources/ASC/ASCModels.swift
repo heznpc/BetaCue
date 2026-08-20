@@ -4,6 +4,29 @@ import Foundation
 
 struct ASCList<Attributes: Decodable & Sendable>: Decodable, Sendable {
     var data: [ASCResource<Attributes>]
+    var meta: ASCMeta?
+
+    /// 서버가 아는 전체 개수. limit에 걸려 잘렸는지 판단할 때 쓴다.
+    var total: Int { meta?.paging.total ?? data.count }
+    var isTruncated: Bool { total > data.count }
+}
+
+/// 관계 엔드포인트는 속성 없이 `{type, id}`만 준다.
+struct ASCRelationshipList: Decodable, Sendable {
+    struct Ref: Decodable, Sendable { var id: String }
+    var data: [Ref]
+    var meta: ASCMeta?
+
+    var ids: [String] { data.map(\.id) }
+    var total: Int { meta?.paging.total ?? data.count }
+}
+
+struct ASCMeta: Decodable, Sendable {
+    struct Paging: Decodable, Sendable {
+        var total: Int
+        var limit: Int?
+    }
+    var paging: Paging
 }
 
 /// 단일 리소스. 관계가 비어 있으면 Apple이 `data: null`을 준다.
@@ -25,6 +48,7 @@ struct AppAttributes: Decodable, Sendable {
 }
 
 struct BuildAttributes: Decodable, Sendable {
+
     /// Apple이 말하는 "version"은 사실 빌드 번호다. 마케팅 버전이 아니다.
     var version: String?
     var processingState: String?

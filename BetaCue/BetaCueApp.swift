@@ -30,7 +30,7 @@ struct BetaCueApp: App {
     ///
     /// `airplane`은 쓰지 않는다 — macOS 비행기 모드와 같은 심볼이라 메뉴바에서 구별되지 않는다.
     private var menuBarSymbol: String {
-        guard let worst = store.apps.map(\.state.severity).min() else { return "paperplane" }
+        guard let worst = store.apps.map(\.status.state.severity).min() else { return "paperplane" }
         switch worst {
         case .warning: return "exclamationmark.triangle.fill"
         case .info:    return "paperplane.circle"
