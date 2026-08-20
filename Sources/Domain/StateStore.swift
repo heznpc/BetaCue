@@ -52,6 +52,34 @@ final class StateStore: @unchecked Sendable {
             PRIMARY KEY (app_id, kind)
         );
         """)
+
+        // CREATE TABLE IF NOT EXISTS는 이미 있는 테이블에 컬럼을 더해주지 않는다.
+        // 이걸 빠뜨리면 스키마가 바뀐 뒤 INSERT가 prepare 단계에서 조용히 실패하고,
+        // 전이가 기록되지 않아 알림이 통째로 멎는다. 실제로 한 번 그렇게 됐다.
+        addColumnIfMissing(table: "state_transitions",
+                           column: "fingerprint",
+                           definition: "TEXT NOT NULL DEFAULT ''")
+    }
+
+    /// 이미 있으면 아무것도 하지 않는다. 없으면 ALTER TABLE로 더한다.
+    private func addColumnIfMissing(table: String, column: String, definition: String) {
+        guard !columnExists(table: table, column: column) else { return }
+        exec("ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
+    }
+
+    private func columnExists(table: String, column: String) -> Bool {
+        queue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "PRAGMA table_info(\(table));", -1, &stmt, nil) == SQLITE_OK
+            else { return false }
+            defer { sqlite3_finalize(stmt) }
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let name = sqlite3_column_text(stmt, 1), String(cString: name) == column {
+                    return true
+                }
+            }
+            return false
+        }
     }
 
     private func exec(_ sql: String) {
