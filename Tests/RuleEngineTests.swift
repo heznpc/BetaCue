@@ -212,3 +212,22 @@ final class RuleEngineTests: XCTestCase {
         }
     }
 }
+
+final class RuntimeHelperTests: XCTestCase {
+    func testRelativeTimeUsesSuppliedClock() {
+        let now = Date(timeIntervalSince1970: 10_000)
+
+        XCTAssertEqual(RelativeTime.string(nil, relativeTo: now), "아직 없음")
+        XCTAssertEqual(RelativeTime.string(now.addingTimeInterval(-9), relativeTo: now), "방금")
+        XCTAssertEqual(RelativeTime.string(now.addingTimeInterval(-42), relativeTo: now), "42초 전")
+        XCTAssertEqual(RelativeTime.string(now.addingTimeInterval(-125), relativeTo: now), "2분 전")
+        XCTAssertEqual(RelativeTime.string(now.addingTimeInterval(-7_300), relativeTo: now), "2시간 전")
+        XCTAssertEqual(RelativeTime.string(now.addingTimeInterval(-172_800), relativeTo: now), "2일 전")
+    }
+
+    func testNotificationSettingsURLTargetsTheApp() {
+        XCTAssertEqual(
+            Notifier.settingsURL(for: "app.betacue")?.absoluteString,
+            "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=app.betacue")
+    }
+}

@@ -28,14 +28,16 @@ struct MenuBarView: View {
 
             Divider().padding(.vertical, 5)
 
-            HStack {
-                Text("마지막 확인: \(RelativeTime.string(store.lastRefresh))")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
+            TimelineView(.periodic(from: .now, by: 10)) { context in
+                HStack {
+                    Text("마지막 확인: \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 7)
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 7)
 
             menuButton("새로고침", symbol: "arrow.clockwise") { store.refresh() }
             menuButton("대시보드 열기", symbol: "macwindow") { openWindow(id: "main") }

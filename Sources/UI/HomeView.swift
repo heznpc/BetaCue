@@ -62,23 +62,25 @@ struct HomeView: View {
             .background(.orange.opacity(0.12))
         }
 
-        HStack(spacing: 8) {
-            if store.isRefreshing {
-                ProgressView().controlSize(.small)
-                Text("확인 중…")
-            } else if let error = store.errorMessage {
-                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                Text(error).lineLimit(1)
-            } else {
-                Text("마지막 확인: \(RelativeTime.string(store.lastRefresh))")
+        TimelineView(.periodic(from: .now, by: 10)) { context in
+            HStack(spacing: 8) {
+                if store.isRefreshing {
+                    ProgressView().controlSize(.small)
+                    Text("확인 중…")
+                } else if let error = store.errorMessage {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                    Text(error).lineLimit(1)
+                } else {
+                    Text("마지막 확인: \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))")
+                }
+                Spacer()
             }
-            Spacer()
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(.bar)
         }
-        .font(.caption)
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(.bar)
     }
 }
 
@@ -200,9 +202,9 @@ extension Severity {
 }
 
 enum RelativeTime {
-    static func string(_ date: Date?) -> String {
+    static func string(_ date: Date?, relativeTo now: Date = Date()) -> String {
         guard let date else { return "아직 없음" }
-        let seconds = Int(Date().timeIntervalSince(date))
+        let seconds = Int(now.timeIntervalSince(date))
         switch seconds {
         case ..<10:     return "방금"
         case ..<60:     return "\(seconds)초 전"

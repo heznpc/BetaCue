@@ -43,8 +43,14 @@ enum Notifier {
         UNUserNotificationCenter.current().add(request) { _ in }
     }
 
-    /// 시스템 설정의 알림 창을 연다. 거부된 권한은 앱에서 되돌릴 수 없다.
+    /// 시스템 설정의 이 앱 알림 상세 화면을 연다. 거부된 권한은 앱에서 되돌릴 수 없다.
     static var settingsURL: URL? {
-        URL(string: "x-apple.systempreferences:com.apple.preference.notifications")
+        guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return nil }
+        return settingsURL(for: bundleIdentifier)
+    }
+
+    static func settingsURL(for bundleIdentifier: String) -> URL? {
+        URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension"
+                   + "?id=\(bundleIdentifier)")
     }
 }
