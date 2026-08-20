@@ -15,8 +15,8 @@ enum Collector {
     {
         // iOS 대시보드이므로 플랫폼을 고정한다. 안 걸면 같은 앱의 macOS 빌드가
         // "최신 빌드"로 잡혀 엉뚱한 상태를 말하게 된다.
-        async let groupsRaw: ASCList<BetaGroupAttributes> =
-            client.get("/v1/apps/\(app.id)/betaGroups?limit=\(groupLimit)")
+        async let groupsRaw: [ASCResource<BetaGroupAttributes>] =
+            client.getAllPages("/v1/apps/\(app.id)/betaGroups?limit=\(groupLimit)")
         async let buildsRaw: ASCList<BuildAttributes> =
             client.get("/v1/builds?filter[app]=\(app.id)"
                        + "&filter[preReleaseVersion.platform]=IOS"
@@ -40,10 +40,6 @@ enum Collector {
                 assignment.value.filter { $0.value.contains(builds.value[index].id) }.map(\.key)
         }
 
-        if groupList.isTruncated {
-            problems.append("그룹이 \(groupList.total)개인데 \(groupList.data.count)개만 읽었습니다.")
-        }
-
         return AppSnapshot(
             id: app.id,
             name: app.attributes.name,
@@ -61,21 +57,23 @@ enum Collector {
     }
 
     private static func loadGroups(
-        _ list: ASCList<BetaGroupAttributes>, using client: ASCClient
+        _ list: [ASCResource<BetaGroupAttributes>], using client: ASCClient
     ) async -> Partial<[GroupSnapshot]> {
         var groups: [GroupSnapshot] = []
         var problems: [String] = []
 
         await withTaskGroup(of: (GroupSnapshot, String?).self) { tg in
-            for g in list.data {
+            for g in list {
                 tg.addTask {
-                    let testers: ASCList<BetaTesterAttributes>? =
-                        await client.getOrNil("/v1/betaGroups/\(g.id)/betaTesters?limit=\(testerLimit)")
+                    // 전 페이지를 세지 않으면 200명에서 잘려 "받을 사람 없음"을 오판한다.
+                    let testers = try? await client.getAllPages(
+                        "/v1/betaGroups/\(g.id)/betaTesters?limit=\(testerLimit)",
+                        as: BetaTesterAttributes.self)
                     let snapshot = GroupSnapshot(
                         id: g.id,
                         name: g.attributes.name,
                         isInternal: g.attributes.isInternalGroup,
-                        testerCount: testers?.total ?? 0,
+                        testerCount: testers?.count ?? 0,
                         autoDistributes: g.attributes.hasAccessToAllBuilds ?? false,
                         publicLinkEnabled: g.attributes.publicLinkEnabled ?? false,
                         publicLink: g.attributes.publicLink,
@@ -113,8 +111,9 @@ enum Collector {
                         client.getOrNil("/v1/builds/\(b.id)/buildBetaDetail")
                     async let preRelease: ASCSingle<PreReleaseVersionAttributes>? =
                         client.getOrNil("/v1/builds/\(b.id)/preReleaseVersion")
-                    async let individuals: ASCRelationshipList? =
-                        client.getOrNil("/v1/builds/\(b.id)/relationships/individualTesters?limit=\(testerLimit)")
+                    async let individuals: [String]? =
+                        try? client.getAllRelationshipIDs(
+                            "/v1/builds/\(b.id)/relationships/individualTesters?limit=\(testerLimit)")
                     let (d, pre, ind) = await (detail, preRelease, individuals)
 
                     let snapshot = BuildSnapshot(
@@ -128,7 +127,7 @@ enum Collector {
                         uploadedAt: b.attributes.uploadedDate,
                         expiresAt: b.attributes.expirationDate,
                         isExpired: b.attributes.expired ?? false,
-                        individualTesterCount: ind?.total ?? 0)
+                        individualTesterCount: ind?.count ?? 0)
                     let problem = d == nil
                         ? "빌드 \(b.attributes.version ?? b.id)의 배포 상태를 읽지 못했습니다." : nil
                     return (index, snapshot, problem)
@@ -151,12 +150,12 @@ enum Collector {
         await withTaskGroup(of: (String, Set<String>?, String?).self) { tg in
             for group in groups {
                 tg.addTask {
-                    let refs: ASCRelationshipList? = await client.getOrNil(
+                    guard let ids = try? await client.getAllRelationshipIDs(
                         "/v1/betaGroups/\(group.id)/relationships/builds?limit=200")
-                    guard let refs else {
+                    else {
                         return (group.id, nil, "'\(group.name)' 그룹의 배포 빌드를 읽지 못했습니다.")
                     }
-                    return (group.id, Set(refs.ids), nil)
+                    return (group.id, Set(ids), nil)
                 }
             }
             for await (id, ids, problem) in tg {

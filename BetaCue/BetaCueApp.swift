@@ -45,7 +45,7 @@ struct BetaCueApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // 창을 한 번도 열지 않아도 상태를 따라가고 알림을 보내야 한다. (명세 §12)
-        Notifier.requestAuthorization()
+        Store.shared.prepareNotifications()
         Store.shared.startPolling()
 
         NSApp.activate(ignoringOtherApps: true)

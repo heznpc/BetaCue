@@ -43,7 +43,25 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder
     private var statusBar: some View {
+        // 알림이 막혀 있으면 이 앱의 절반이 동작하지 않는다. 조용히 두면 안 된다.
+        if store.notificationPermission.isBlocking {
+            HStack(spacing: 7) {
+                Image(systemName: "bell.slash.fill").foregroundStyle(.orange)
+                Text("알림이 꺼져 있어 상태 변화를 알려드릴 수 없습니다")
+                Spacer()
+                Button("설정 열기") {
+                    if let url = Notifier.settingsURL { NSWorkspace.shared.open(url) }
+                }
+                .buttonStyle(.link)
+            }
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.orange.opacity(0.12))
+        }
+
         HStack(spacing: 8) {
             if store.isRefreshing {
                 ProgressView().controlSize(.small)

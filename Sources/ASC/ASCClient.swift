@@ -98,6 +98,42 @@ actor ASCClient {
         }
     }
 
+    /// `links.next`를 따라가며 전부 모은다.
+    ///
+    /// Apple은 한 페이지에 최대 200개만 준다. 잘린 걸 모르고 쓰면 테스터 수가
+    /// 실제보다 적게 나오고, 그 숫자로 "받을 사람이 없다"는 판정을 내리게 된다.
+    /// 폭주를 막기 위해 페이지 수에 상한을 둔다.
+    func getAllPages<T: Decodable & Sendable>(
+        _ path: String, as type: T.Type = T.self, maxPages: Int = 20
+    ) async throws -> [ASCResource<T>] where T: Sendable {
+        var collected: [ASCResource<T>] = []
+        var next: String? = path
+        var pages = 0
+
+        while let current = next, pages < maxPages {
+            let page: ASCList<T> = try await get(current)
+            collected += page.data
+            next = page.links?.next
+            pages += 1
+        }
+        return collected
+    }
+
+    /// 관계 목록의 전 페이지.
+    func getAllRelationshipIDs(_ path: String, maxPages: Int = 20) async throws -> [String] {
+        var collected: [String] = []
+        var next: String? = path
+        var pages = 0
+
+        while let current = next, pages < maxPages {
+            let page: ASCRelationshipList = try await get(current)
+            collected += page.ids
+            next = page.links?.next
+            pages += 1
+        }
+        return collected
+    }
+
     /// 실패해도 전체를 무너뜨리면 안 되는 부수 조회용. 오류는 nil로 접는다.
     func getOrNil<T: Decodable>(_ path: String, as type: T.Type = T.self) async -> T? {
         try? await get(path, as: type)
@@ -127,7 +163,11 @@ actor ASCClient {
     }
 
     private func send(path: String, method: String, body: Data?) async throws -> Data {
-        guard let url = URL(string: path, relativeTo: Self.base) else {
+        // links.next는 절대 URL로 온다. 상대 경로와 둘 다 받는다.
+        let resolved = path.hasPrefix("http")
+            ? URL(string: path)
+            : URL(string: path, relativeTo: Self.base)
+        guard let url = resolved else {
             throw ASCError.transport("잘못된 경로: \(path)")
         }
         var request = URLRequest(url: url)

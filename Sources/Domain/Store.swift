@@ -14,6 +14,8 @@ final class Store {
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
     private(set) var errorMessage: String?
+    /// 알림 권한. 거부되면 상태 변화를 알릴 수 없으므로 화면에서 알린다.
+    private(set) var notificationPermission: Notifier.Permission = .unknown
 
     var config: BetaCueConfig {
         didSet { client = config.credentials.map { ASCClient(credentials: $0) } }
@@ -45,6 +47,16 @@ final class Store {
         if apps.contains(where: { $0.status.state.id == .buildProcessing }) { return 60 }
         if apps.contains(where: { $0.status.state.severity == .warning }) { return 300 }
         return apps.isEmpty ? 300 : 900
+    }
+
+    /// 알림 권한을 확인·요청하고 결과를 보관한다.
+    func prepareNotifications() {
+        Task { [weak self] in
+            let current = await Notifier.currentPermission()
+            self?.notificationPermission = current == .unknown
+                ? await Notifier.requestAuthorization()
+                : current
+        }
     }
 
     func startPolling() {

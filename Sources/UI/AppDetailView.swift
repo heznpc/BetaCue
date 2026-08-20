@@ -14,6 +14,7 @@ struct AppDetailView: View {
                 currentBuild
                 distribution
                 history
+                timeline
                 appleDetails
             }
             .padding(22)
@@ -119,8 +120,15 @@ struct AppDetailView: View {
                             if group.publicLinkEnabled {
                                 Image(systemName: "link").foregroundStyle(.blue)
                             }
-                            Text(group.testerCount == 0 ? "없음" : "\(group.testerCount)명")
+                            Text(group.testerCount == 0
+                                 ? "없음"
+                                 : "\(group.testerCount)명\(group.testerCountIsExact ? "" : "+")")
                                 .foregroundStyle(isOn ? .primary : .secondary)
+                            if group.autoDistributes {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .foregroundStyle(.secondary)
+                                    .help("새 빌드가 자동으로 배포됩니다")
+                            }
                         }
                     } label: {
                         HStack(spacing: 6) {
@@ -131,8 +139,23 @@ struct AppDetailView: View {
                     }
                     .font(.callout)
                 }
-                Text("체크 표시는 최신 빌드가 그 그룹에 연결됐다는 뜻입니다.")
+                Text("체크 표시는 최신 빌드가 그 그룹에 연결됐다는 뜻입니다. "
+                     + "↻는 새 빌드 자동 배포, 링크 아이콘은 공개 링크입니다.")
                     .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let link = app.groups.compactMap(\.publicLink).first {
+                    HStack(spacing: 6) {
+                        Text(link).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(link, forType: .string)
+                        } label: {
+                            Image(systemName: "doc.on.doc")
+                        }
+                        .buttonStyle(.borderless)
+                        .help("공개 링크 복사")
+                    }
+                }
             }
             if let count = app.latestBuild?.individualTesterCount, count > 0 {
                 LabeledContent("개별 초대", value: "\(count)명").font(.callout)
@@ -154,6 +177,50 @@ struct AppDetailView: View {
             }
         }
     }
+
+    /// 상태가 언제 어떻게 바뀌었는지. (명세 §21)
+    ///
+    /// "처리에 얼마나 걸렸나" 같은 질문을 AI 없이 답하게 하는 근거이기도 하다.
+    @ViewBuilder
+    private var timeline: some View {
+        let entries = store.transitions(for: app)
+        if !entries.isEmpty {
+            Section2("상태 기록") {
+                ForEach(entries.prefix(8)) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text(Self.timeFormatter.string(from: entry.at))
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 96, alignment: .leading)
+                        Text(describe(entry))
+                            .font(.callout)
+                    }
+                }
+                if entries.count > 8 {
+                    Text("이전 기록 \(entries.count - 8)건 더 있음")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    /// 상태 ID는 같은데 지문만 바뀐 경우가 있다 — 원인이나 빌드가 달라진 것이다.
+    /// 그걸 "X → X"로 쓰면 읽는 사람이 오해한다.
+    private func describe(_ entry: StateStore.Transition) -> String {
+        guard let from = entry.from else { return "처음 확인 · \(label(for: entry.to))" }
+        guard from != entry.to else { return "\(label(for: entry.to)) · 세부 변경" }
+        return "\(label(for: from)) → \(label(for: entry.to))"
+    }
+
+    private func label(for id: AppStateID) -> String {
+        AppStateDefinition.make(id).headline
+    }
+
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd HH:mm"
+        return f
+    }()
 
     /// 고급 사용자용 원본. 기본 접힘. (명세 §15, §29)
     private var appleDetails: some View {

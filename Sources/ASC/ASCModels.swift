@@ -5,6 +5,7 @@ import Foundation
 struct ASCList<Attributes: Decodable & Sendable>: Decodable, Sendable {
     var data: [ASCResource<Attributes>]
     var meta: ASCMeta?
+    var links: ASCLinks?
 
     /// 서버가 아는 전체 개수. limit에 걸려 잘렸는지 판단할 때 쓴다.
     var total: Int { meta?.paging.total ?? data.count }
@@ -16,9 +17,15 @@ struct ASCRelationshipList: Decodable, Sendable {
     struct Ref: Decodable, Sendable { var id: String }
     var data: [Ref]
     var meta: ASCMeta?
+    var links: ASCLinks?
 
     var ids: [String] { data.map(\.id) }
     var total: Int { meta?.paging.total ?? data.count }
+}
+
+/// 다음 페이지 주소. 있으면 아직 안 읽은 항목이 남아 있다는 뜻이다.
+struct ASCLinks: Decodable, Sendable {
+    var next: String?
 }
 
 struct ASCMeta: Decodable, Sendable {
