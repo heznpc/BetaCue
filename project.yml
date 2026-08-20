@@ -1,0 +1,56 @@
+name: BetaCue
+options:
+  bundleIdPrefix: app
+  deploymentTarget:
+    macOS: "14.0"
+  createIntermediateGroups: true
+  defaultConfig: Debug
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    DEVELOPMENT_TEAM: ""   # 자기 Apple 팀 ID로 채운다
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: 0.1.0
+    CURRENT_PROJECT_VERSION: 1
+targets:
+  BetaCue:
+    type: application
+    platform: macOS
+    sources:
+      - path: BetaCue
+        excludes:
+          - "*.plist"
+          - "*.entitlements"
+      - path: Sources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.betacue
+        PRODUCT_NAME: BetaCue
+        INFOPLIST_FILE: BetaCue/Info.plist
+        CODE_SIGN_ENTITLEMENTS: BetaCue/BetaCue.entitlements
+        SWIFT_STRICT_CONCURRENCY: complete
+        ENABLE_APP_INTENTS_METADATA_GENERATION: NO
+  BetaCueTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: BetaCue
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.betacue.tests
+        GENERATE_INFOPLIST_FILE: YES
+        # PRODUCT_NAME이 BetaCue라 xcodegen 기본 TEST_HOST 경로와 어긋난다.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/BetaCue.app/Contents/MacOS/BetaCue"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  BetaCue:
+    build:
+      targets:
+        BetaCue: all
+        BetaCueTests: [test]
+    test:
+      targets:
+        - BetaCueTests

@@ -1,0 +1,115 @@
+import Foundation
+
+// MARK: - JSON:API 봉투
+
+struct ASCList<Attributes: Decodable & Sendable>: Decodable, Sendable {
+    var data: [ASCResource<Attributes>]
+}
+
+/// 단일 리소스. 관계가 비어 있으면 Apple이 `data: null`을 준다.
+struct ASCSingle<Attributes: Decodable & Sendable>: Decodable, Sendable {
+    var data: ASCResource<Attributes>?
+}
+
+struct ASCResource<Attributes: Decodable & Sendable>: Decodable, Sendable, Identifiable {
+    var id: String
+    var attributes: Attributes
+}
+
+// MARK: - 속성
+
+struct AppAttributes: Decodable, Sendable {
+    var name: String
+    var bundleId: String
+    var sku: String?
+}
+
+struct BuildAttributes: Decodable, Sendable {
+    /// Apple이 말하는 "version"은 사실 빌드 번호다. 마케팅 버전이 아니다.
+    var version: String?
+    var processingState: String?
+    var uploadedDate: Date?
+    var expirationDate: Date?
+    var expired: Bool?
+    var usesNonExemptEncryption: Bool?
+    var minOsVersion: String?
+}
+
+struct BuildBetaDetailAttributes: Decodable, Sendable {
+    var autoNotifyEnabled: Bool?
+    var internalBuildState: String?
+    var externalBuildState: String?
+}
+
+struct BetaGroupAttributes: Decodable, Sendable {
+    var name: String
+    var isInternalGroup: Bool
+    var hasAccessToAllBuilds: Bool?
+    var publicLinkEnabled: Bool?
+    var publicLink: String?
+    var publicLinkLimit: Int?
+    var feedbackEnabled: Bool?
+    var createdDate: Date?
+}
+
+struct BetaTesterAttributes: Decodable, Sendable {
+    var firstName: String?
+    var lastName: String?
+    var email: String?
+    var inviteType: String?
+    /// Apple이 이 필드를 거의 항상 null로 준다. 설치 여부 판단에 쓸 수 없다.
+    var state: String?
+}
+
+struct CertificateAttributes: Decodable, Sendable {
+    var name: String?
+    var certificateType: String?
+    var expirationDate: Date?
+}
+
+struct PreReleaseVersionAttributes: Decodable, Sendable {
+    var version: String?
+    var platform: String?
+}
+
+struct BetaBuildLocalizationAttributes: Decodable, Sendable {
+    var whatsNew: String?
+    var locale: String?
+}
+
+struct FeedbackScreenshotAttributes: Decodable, Sendable {
+    var createdDate: Date?
+    var comment: String?
+    var deviceModel: String?
+    var osVersion: String?
+}
+
+struct FeedbackCrashAttributes: Decodable, Sendable {
+    var createdDate: Date?
+    var comment: String?
+    var deviceModel: String?
+    var osVersion: String?
+}
+
+// MARK: - 디코딩
+
+extension JSONDecoder {
+    /// Apple은 ISO8601을 소수점 초가 있는 형태와 없는 형태를 섞어서 준다.
+    static let asc: JSONDecoder = {
+        let decoder = JSONDecoder()
+        let withFraction = ISO8601DateFormatter()
+        withFraction.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let plain = ISO8601DateFormatter()
+        plain.formatOptions = [.withInternetDateTime]
+
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let raw = try decoder.singleValueContainer().decode(String.self)
+            if let date = withFraction.date(from: raw) ?? plain.date(from: raw) {
+                return date
+            }
+            throw DecodingError.dataCorrupted(
+                .init(codingPath: decoder.codingPath, debugDescription: "날짜 형식을 알 수 없음: \(raw)"))
+        }
+        return decoder
+    }()
+}
