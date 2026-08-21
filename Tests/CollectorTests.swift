@@ -122,6 +122,9 @@ final class CollectorTests: XCTestCase {
                      "an unread audience type must not read as a value")
     }
 
+    /// The count going unknown is only half of it. Without the failure in `partialErrors`
+    /// the snapshot claims to be complete, and Store then records a transition into UNKNOWN
+    /// and announces a transient blip as something that needs attention.
     func testFailedIndividualTesterFetchLeavesTheCountUnknown() async throws {
         var table = healthyTable()
         table["relationships/individualTesters"] = .init(status: 500)
@@ -129,6 +132,36 @@ final class CollectorTests: XCTestCase {
 
         let snapshot = try await Collector.loadApp(app, using: client)
         XCTAssertNil(snapshot.builds.first?.individualTesterCount)
+        XCTAssertTrue(snapshot.isPartial, "an unread channel must not read as a complete snapshot")
+        // Asserting on the wording would only assert which language the test process runs in.
+        XCTAssertEqual(snapshot.partialErrors.count, 1,
+                       "exactly one fetch failed: \(snapshot.partialErrors)")
+    }
+
+    /// A page ceiling hit is the same ignorance as a 500, and has to be reported the same way.
+    func testTruncatedIndividualTesterListIsReportedAsPartial() async throws {
+        var table = healthyTable()
+        table["relationships/individualTesters"] = .json(#"""
+        {"data":[{"type":"x","id":"t"}],
+         "links":{"next":"https://api.appstoreconnect.apple.com/v1/y?cursor=1"}}
+        """#)
+        MockURLProtocol.respond(table)
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertNil(snapshot.builds.first?.individualTesterCount)
+        XCTAssertTrue(snapshot.isPartial)
+    }
+
+    /// A readable group answers the audience question on its own. Losing the individual
+    /// count must not drag an app that is plainly distributed into UNKNOWN.
+    func testAReadableGroupStillSettlesTheAudience() async throws {
+        var table = healthyTable()
+        table["relationships/individualTesters"] = .init(status: 500)
+        MockURLProtocol.respond(table)
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertEqual(snapshot.status.state.id, .internalTestingReady,
+                       "one unread channel is not a reason to forget the other one answered")
     }
 
     /// A truncated page is the same kind of ignorance as a failed one.

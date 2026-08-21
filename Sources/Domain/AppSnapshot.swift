@@ -163,14 +163,21 @@ struct BuildSnapshot: Identifiable, Sendable, Codable {
     ///
     /// This asks about **attachment**, not installability. A build can have an audience
     /// configured and still be uninstallable because Apple has not finished with it.
+    ///
+    /// One channel answering is enough. A group that demonstrably holds testers settles the
+    /// question no matter what the individual-tester fetch did, and vice versa — declaring
+    /// the whole audience unknown because *some* fetch failed sent apps to UNKNOWN that had
+    /// a perfectly readable group attached. Only when nothing positive was found does the
+    /// unread part matter, and then it is the difference between "none" and "can't tell".
     func hasAssignedAudience(among groups: [GroupSnapshot]) -> Reachability {
-        guard let assignedGroupIDs, let individualTesterCount else { return .unknown }
-        if individualTesterCount > 0 { return .reachable }
+        if let individualTesterCount, individualTesterCount > 0 { return .reachable }
+        let attached = assignedGroupIDs.map { ids in groups.filter { ids.contains($0.id) } }
+        if attached?.contains(where: { $0.reachability == .reachable }) == true { return .reachable }
 
-        let attached = groups.filter { assignedGroupIDs.contains($0.id) }
-        if attached.contains(where: { $0.reachability == .reachable }) { return .reachable }
-        if attached.contains(where: { $0.reachability == .unknown }) { return .unknown }
-        return .unreachable
+        let somethingIsUnread = assignedGroupIDs == nil
+            || individualTesterCount == nil
+            || attached?.contains { $0.reachability == .unknown } == true
+        return somethingIsUnread ? .unknown : .unreachable
     }
 
     /// Can the testers invited straight to this build install it right now?

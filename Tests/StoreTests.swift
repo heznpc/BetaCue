@@ -155,6 +155,27 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(notifier.count, 0, "a failed fetch is not a state change")
     }
 
+    /// P0-2. The individual-tester fetch failing used to leave no trace on the snapshot, so
+    /// the refresh looked complete, the audience resolved to UNKNOWN, and a transient blip
+    /// was recorded as a transition and announced as "needs attention".
+    func testAFailedIndividualTesterFetchNeitherNotifiesNorRecords() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore(dbName: "individuals.sqlite")
+        await refreshAndWait(store)
+        let recorded = store.apps.first.map { store.transitions(for: $0).count } ?? 0
+
+        var broken = table()
+        broken["relationships/individualTesters"] = .init(status: 500)
+        MockURLProtocol.respond(broken)
+        await refreshAndWait(store)
+
+        let app = try? XCTUnwrap(store.apps.first)
+        XCTAssertEqual(app?.isPartial, true, "the failed channel has to be on the snapshot")
+        XCTAssertEqual(notifier.count, 0, "an unread channel is not a state change")
+        XCTAssertEqual(app.map { store.transitions(for: $0).count }, recorded,
+                       "a partial read must not enter the timeline either")
+    }
+
     // MARK: - Failure isolation
 
     /// Apps are matched by ID, not by name: names collide and change.

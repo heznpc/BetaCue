@@ -126,6 +126,30 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertNil(status.testable)
     }
 
+    /// P0-2. One channel answering settles attachment. Requiring both to be readable sent
+    /// apps with a perfectly readable group into UNKNOWN whenever the other fetch failed.
+    func testAReadableChannelSurvivesAnUnreadableOne() {
+        let readableGroup = build(individualTesterCount: nil)
+        XCTAssertEqual(readableGroup.hasAssignedAudience(among: [group(testers: 3)]), .reachable,
+                       "a group with three testers is an audience regardless of the other fetch")
+
+        let readableIndividuals = build(assignedGroupIDs: nil, individualTesterCount: 2)
+        XCTAssertEqual(readableIndividuals.hasAssignedAudience(among: []), .reachable,
+                       "two direct invitees are an audience regardless of the other fetch")
+    }
+
+    /// With nothing positive found, the unread part is the difference between "none" and
+    /// "can't tell" — and that difference is what decides whether anything notifies.
+    func testNothingFoundPlusAnUnreadChannelIsUnknown() {
+        XCTAssertEqual(build(assignedGroupIDs: [], individualTesterCount: nil)
+                        .hasAssignedAudience(among: []), .unknown)
+        XCTAssertEqual(build(assignedGroupIDs: nil, individualTesterCount: 0)
+                        .hasAssignedAudience(among: []), .unknown)
+        XCTAssertEqual(build(assignedGroupIDs: [], individualTesterCount: 0)
+                        .hasAssignedAudience(among: []), .unreachable,
+                       "everything was read and there is nobody; that is an answer")
+    }
+
     // MARK: - Individual testers have no readable channel
 
     /// P0-1. Apple admits both internal and external testers as individual invitees and returns

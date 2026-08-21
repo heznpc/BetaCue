@@ -663,6 +663,17 @@
         }
       }
     },
+    "Couldn't read the testers invited directly to build %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 %@에 직접 초대된 테스터를 읽지 못했습니다."
+          }
+        }
+      }
+    },
     "Couldn't record a state change, so notifications may be missed.": {
       "extractionState": "manual",
       "localizations": {

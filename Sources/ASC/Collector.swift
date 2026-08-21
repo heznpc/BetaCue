@@ -109,9 +109,9 @@ enum Collector {
     private static func loadBuilds(
         _ list: ASCList<BuildAttributes>, using client: ASCClient
     ) async -> Partial<[BuildSnapshot]> {
-        var indexed: [(Int, BuildSnapshot, String?)] = []
+        var indexed: [(Int, BuildSnapshot, [String])] = []
 
-        await withTaskGroup(of: (Int, BuildSnapshot, String?).self) { tg in
+        await withTaskGroup(of: (Int, BuildSnapshot, [String]).self) { tg in
             for (index, b) in list.data.enumerated() {
                 tg.addTask {
                     // The marketing version lives on preReleaseVersion, not on the build.
@@ -139,16 +139,26 @@ enum Collector {
                         assignedGroupIDs: nil,
                         individualTesterCount: (ind?.isComplete ?? false) ? ind?.values.count : nil,
                         audienceType: b.attributes.buildAudienceType)
-                    let problem = d == nil
-                        ? String(localized: "Couldn't read distribution state for build \(b.attributes.version ?? b.id).") : nil
-                    return (index, snapshot, problem)
+                    // Every fetch that came back short has to be named. A missing individual
+                    // tester count leaves the audience unresolved exactly as a missing beta
+                    // detail leaves the state unresolved, and an unnamed gap is a snapshot
+                    // that looks complete — which is what turns a blip into a notification.
+                    let label = b.attributes.version ?? b.id
+                    var problems: [String] = []
+                    if d == nil {
+                        problems.append(String(localized: "Couldn't read distribution state for build \(label)."))
+                    }
+                    if !(ind?.isComplete ?? false) {
+                        problems.append(String(localized: "Couldn't read the testers invited directly to build \(label)."))
+                    }
+                    return (index, snapshot, problems)
                 }
             }
             for await triple in tg { indexed.append(triple) }
         }
 
         indexed.sort { $0.0 < $1.0 }   // keep the server's newest-upload-first order
-        return Partial(value: indexed.map(\.1), problems: indexed.compactMap(\.2))
+        return Partial(value: indexed.map(\.1), problems: indexed.flatMap(\.2))
     }
 
     /// Group ID to the set of build IDs attached to that group.
