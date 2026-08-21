@@ -1,7 +1,7 @@
 import XCTest
 @testable import BetaCue
 
-/// 전이 기록은 알림의 유일한 근거다. 여기가 조용히 죽으면 앱이 아무것도 안 알린다.
+/// Transition records are the only basis for notifications. If this dies quietly, nothing notifies.
 final class StateStoreTests: XCTestCase {
     private var directory: URL!
     private var dbURL: URL!
@@ -29,13 +29,13 @@ final class StateStoreTests: XCTestCase {
     func testUnknownAppHasNoPreviousState() {
         let store = StateStore(url: dbURL)
         XCTAssertNil(store.lastFingerprint(appID: "never-seen"),
-                     "처음 보는 앱은 nil이어야 최초 조회에서 알림이 안 쏟아진다")
+                     "an unseen app must be nil so the first fetch stays quiet")
     }
 
-    /// 실제로 겪은 사고. 컬럼을 추가한 뒤 기존 DB에서 INSERT가 prepare 단계에서 실패해
-    /// 전이가 통째로 유실됐고, 아무 오류도 보이지 않았다.
+    /// This actually happened: after adding a column, INSERT failed at prepare time on an
+    /// existing database, every transition was lost, and no error surfaced anywhere.
     func testMigratesOlderSchemaMissingFingerprint() throws {
-        // fingerprint 컬럼이 없던 시절의 스키마를 그대로 만든다.
+        // Recreate the schema exactly as it was before the fingerprint column existed.
         let legacy = """
         CREATE TABLE state_transitions (
             id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,7 +54,7 @@ final class StateStoreTests: XCTestCase {
 
         let last = store.lastFingerprint(appID: "app-1")
         XCTAssertEqual(last?.state, .internalTestingReady,
-                       "구 스키마 DB에서도 전이가 기록돼야 한다")
+                       "transitions must record even on an old-schema database")
         XCTAssertEqual(last?.fingerprint, "INTERNAL_TESTING_READY|-|b2")
     }
 
@@ -77,7 +77,7 @@ final class StateStoreTests: XCTestCase {
     func testFeedbackCountExchangeReportsPreviousValue() {
         let store = StateStore(url: dbURL)
         XCTAssertNil(store.exchangeFeedbackCount(appID: "app-1", kind: "crash", newCount: 3),
-                     "처음 보는 값은 이전 개수가 없다")
+                     "a first-seen key has no previous count")
         XCTAssertEqual(store.exchangeFeedbackCount(appID: "app-1", kind: "crash", newCount: 5), 3)
     }
 
@@ -89,6 +89,6 @@ final class StateStoreTests: XCTestCase {
         process.arguments = [url.path, sql]
         try process.run()
         process.waitUntilExit()
-        XCTAssertEqual(process.terminationStatus, 0, "구 스키마 생성 실패")
+        XCTAssertEqual(process.terminationStatus, 0, "failed to create the legacy schema")
     }
 }

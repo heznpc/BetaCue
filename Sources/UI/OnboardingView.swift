@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 최초 연결. 키 파일은 Apple이 정한 자리에서 찾고, 사용자에게는 Issuer ID만 받는다.
+/// First-run connection. The key file is discovered where Apple keeps it; only the Issuer ID is asked for.
 struct OnboardingView: View {
     @Bindable var store: Store
     @State private var keyID: String = ""
@@ -12,9 +12,9 @@ struct OnboardingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 6) {
-                Text("App Store Connect 연결")
+                Text(String(localized: "Connect App Store Connect"))
                     .font(.title3.weight(.semibold))
-                Text("내 앱 상태를 읽어오려면 Apple에서 발급한 API 키가 필요합니다. 키 파일은 그대로 두고 식별자만 알려주면 됩니다.")
+                Text(String(localized: "Reading your app status needs an API key from Apple. Leave the key file where it is and just give the identifiers."))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -23,8 +23,8 @@ struct OnboardingView: View {
             if discovered.isEmpty {
                 Label {
                     VStack(alignment: .leading, spacing: 3) {
-                        Text("키 파일을 찾지 못했습니다")
-                        Text("App Store Connect에서 API 키를 만들고 내려받은 .p8 파일을 아래 위치에 두세요.")
+                        Text(String(localized: "No key file found"))
+                        Text(String(localized: "Create an API key in App Store Connect and put the downloaded .p8 file here."))
                             .font(.caption).foregroundStyle(.secondary)
                         Text("~/.appstoreconnect/private_keys/")
                             .font(.caption.monospaced()).foregroundStyle(.secondary)
@@ -33,8 +33,8 @@ struct OnboardingView: View {
                     Image(systemName: "key.slash").foregroundStyle(.orange)
                 }
             } else {
-                Picker("키", selection: $keyID) {
-                    Text("선택").tag("")
+                Picker(String(localized: "Key"), selection: $keyID) {
+                    Text(String(localized: "Select")).tag("")
                     ForEach(discovered, id: \.self) { Text($0).tag($0) }
                 }
                 .pickerStyle(.menu)
@@ -43,7 +43,7 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 TextField("Issuer ID", text: $issuerID)
                     .textFieldStyle(.roundedBorder)
-                Text("App Store Connect → 사용자 및 액세스 → 통합 화면 상단에 있습니다.")
+                Text(String(localized: "It's at the top of App Store Connect → Users and Access → Integrations."))
                     .font(.caption).foregroundStyle(.secondary)
             }
 
@@ -51,7 +51,7 @@ struct OnboardingView: View {
                 Text(saveError).font(.callout).foregroundStyle(.red)
             }
 
-            Button("연결") { connect() }
+            Button(String(localized: "Connect")) { connect() }
                 .buttonStyle(.borderedProminent)
                 .disabled(keyID.isEmpty || issuerID.trimmed.isEmpty)
 
@@ -76,7 +76,7 @@ struct OnboardingView: View {
             saveError = nil
             store.refresh()
         } catch {
-            saveError = "설정을 저장하지 못했습니다: \(error.localizedDescription)"
+            saveError = String(localized: "Couldn't save settings: \(error.localizedDescription)")
         }
     }
 }
@@ -87,9 +87,9 @@ struct SettingsView: View {
     var body: some View {
         TabView {
             OnboardingView(store: store)
-                .tabItem { Label("연결", systemImage: "key") }
+                .tabItem { Label(String(localized: "Connect"), systemImage: "key") }
             certificates
-                .tabItem { Label("인증서", systemImage: "checkmark.seal") }
+                .tabItem { Label(String(localized: "Certificates"), systemImage: "checkmark.seal") }
         }
         .frame(width: 500, height: 380)
     }
@@ -97,12 +97,12 @@ struct SettingsView: View {
     private var certificates: some View {
         VStack(alignment: .leading, spacing: 10) {
             if store.certificates.isEmpty {
-                Text("아직 불러오지 않았습니다.").foregroundStyle(.secondary)
+                Text(String(localized: "Nothing loaded yet.")).foregroundStyle(.secondary)
             } else {
                 ForEach(store.certificates) { cert in
                     LabeledContent(cert.name) {
                         if let days = cert.daysLeft {
-                            Text(days < 0 ? "만료됨" : "\(days)일 남음")
+                            Text(days < 0 ? String(localized: "Expired") : String(localized: "\(days) days left"))
                                 .foregroundStyle(days < 60 ? .orange : .secondary)
                         } else {
                             Text("—").foregroundStyle(.secondary)

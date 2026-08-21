@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 상세. 홈에서 숨긴 Apple 개념을 필요할 때만 확인하는 자리다. (명세 §15)
+/// Detail view — where the Apple concepts hidden on the home screen become available. (spec §15)
 struct AppDetailView: View {
     let app: AppSnapshot
     let store: Store
@@ -45,13 +45,13 @@ struct AppDetailView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // "새 버전 됐나"와 "지금 받을 수 있나"는 서로 다른 질문이다.
+            // "Did the new one land?" and "can they install now?" are different questions.
             if let testable = status.testable {
                 Label {
                     Text(status.hasOlderTestableBuild
-                         ? "지금은 \(testable.displayVersion)을(를) 테스트할 수 있습니다"
-                         : "지금 설치할 수 있습니다")
-                    + Text(status.audience.map { " · \($0)" } ?? "")
+                         ? String(localized: "\(testable.displayVersion) is what you can test right now")
+                         : String(localized: "You can install it now"))
+                    + Text(status.audienceDescription.map { " · \($0)" } ?? "")
                         .foregroundStyle(.secondary)
                 } icon: {
                     Image(systemName: "checkmark.circle.fill")
@@ -83,7 +83,7 @@ struct AppDetailView: View {
                 if let action = state.nextAction {
                     ActionButton(action: action, app: app, store: store)
                 }
-                Text("마지막 확인: \(RelativeTime.string(app.fetchedAt))")
+                Text(String(localized: "Last checked \(RelativeTime.string(app.fetchedAt))"))
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -92,25 +92,25 @@ struct AppDetailView: View {
     @ViewBuilder
     private var currentBuild: some View {
         if let build = app.latestBuild {
-            Section2("현재 버전") {
-                LabeledContent("버전", value: build.displayVersion)
+            Section2(String(localized: "Current version")) {
+                LabeledContent(String(localized: "Version"), value: build.displayVersion)
                 if let uploaded = build.uploadedAt {
-                    LabeledContent("업로드", value: RelativeTime.string(uploaded))
+                    LabeledContent(String(localized: "Uploaded"), value: RelativeTime.string(uploaded))
                 }
-                LabeledContent("상태", value: "\(build.humanState)  ·  \(build.processingState)")
+                LabeledContent(String(localized: "State"), value: "\(build.humanState)  ·  \(build.processingState)")
                 if let days = build.daysUntilExpiry, !build.isExpired {
-                    LabeledContent("만료", value: "\(days)일 남음")
+                    LabeledContent(String(localized: "Expires"), value: String(localized: "\(days) days left"))
                 }
             }
         }
     }
 
-    /// 앱에 그룹이 있다는 것과 **이 빌드가 그 그룹에 연결됐다**는 건 다른 사실이다.
-    /// 둘을 섞으면 "누가 받을 수 있나"에 자신 있게 틀린 답을 하게 된다.
+    /// An app having groups and **this build being attached to them** are different facts.
+    /// Conflating them means answering "who can install this?" confidently and wrongly.
     private var distribution: some View {
-        Section2("누가 테스트할 수 있나") {
+        Section2(String(localized: "Who can test this")) {
             if app.groups.isEmpty {
-                Text("테스터 그룹이 없습니다.").foregroundStyle(.secondary)
+                Text(String(localized: "There is no tester group.")).foregroundStyle(.secondary)
             } else {
                 let assigned = app.latestBuild?.assignedGroupIDs ?? []
                 ForEach(app.groups) { group in
@@ -121,26 +121,27 @@ struct AppDetailView: View {
                                 Image(systemName: "link").foregroundStyle(.blue)
                             }
                             Text(group.testerCount == 0
-                                 ? "없음"
-                                 : "\(group.testerCount)명\(group.testerCountIsExact ? "" : "+")")
+                                 ? String(localized: "none")
+                                 : String(localized: "\(group.testerCount) people")
+                                   + (group.testerCountIsExact ? "" : "+"))
                                 .foregroundStyle(isOn ? .primary : .secondary)
                             if group.autoDistributes {
                                 Image(systemName: "arrow.triangle.2.circlepath")
                                     .foregroundStyle(.secondary)
-                                    .help("새 빌드가 자동으로 배포됩니다")
+                                    .help(String(localized: "New builds distribute automatically"))
                             }
                         }
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                                 .foregroundStyle(isOn ? .green : .secondary)
-                            Text("\(group.isInternal ? "내부" : "외부") · \(group.name)")
+                            Text("\(group.isInternal ? String(localized: "Internal") : String(localized: "External")) · \(group.name)")
                         }
                     }
                     .font(.callout)
                 }
-                Text("체크 표시는 최신 빌드가 그 그룹에 연결됐다는 뜻입니다. "
-                     + "↻는 새 빌드 자동 배포, 링크 아이콘은 공개 링크입니다.")
+                Text(String(localized: "A check means the latest build is attached to that group. ")
+                     + String(localized: "↻ means new builds distribute automatically; the link icon means a public link."))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 if let link = app.groups.compactMap(\.publicLink).first {
@@ -153,21 +154,21 @@ struct AppDetailView: View {
                             Image(systemName: "doc.on.doc")
                         }
                         .buttonStyle(.borderless)
-                        .help("공개 링크 복사")
+                        .help(String(localized: "Copy public link"))
                     }
                 }
             }
             if let count = app.latestBuild?.individualTesterCount, count > 0 {
-                LabeledContent("개별 초대", value: "\(count)명").font(.callout)
+                LabeledContent(String(localized: "Individual invites"), value: String(localized: "\(count) people")).font(.callout)
             }
-            // 설치 여부는 신뢰 가능한 데이터가 없어 표시하지 않는다. (명세 §28)
+            // Install status stays hidden until the data is trustworthy. (spec §28)
         }
     }
 
     @ViewBuilder
     private var history: some View {
         if app.builds.count > 1 {
-            Section2("이전 버전") {
+            Section2(String(localized: "Earlier versions")) {
                 ForEach(app.builds.dropFirst()) { build in
                     LabeledContent(build.displayVersion) {
                         Text(build.humanState).foregroundStyle(.secondary)
@@ -178,14 +179,14 @@ struct AppDetailView: View {
         }
     }
 
-    /// 상태가 언제 어떻게 바뀌었는지. (명세 §21)
+    /// When and how the state changed. (spec §21)
     ///
-    /// "처리에 얼마나 걸렸나" 같은 질문을 AI 없이 답하게 하는 근거이기도 하다.
+    /// Also the evidence that answers "how long did processing take?" without an LLM.
     @ViewBuilder
     private var timeline: some View {
         let entries = store.transitions(for: app)
         if !entries.isEmpty {
-            Section2("상태 기록") {
+            Section2(String(localized: "State history")) {
                 ForEach(entries.prefix(8)) { entry in
                     HStack(alignment: .firstTextBaseline, spacing: 9) {
                         Text(Self.timeFormatter.string(from: entry.at))
@@ -197,18 +198,18 @@ struct AppDetailView: View {
                     }
                 }
                 if entries.count > 8 {
-                    Text("이전 기록 \(entries.count - 8)건 더 있음")
+                    Text(String(localized: "\(entries.count - 8) earlier entries"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }
     }
 
-    /// 상태 ID는 같은데 지문만 바뀐 경우가 있다 — 원인이나 빌드가 달라진 것이다.
-    /// 그걸 "X → X"로 쓰면 읽는 사람이 오해한다.
+    /// The state ID can stay put while the fingerprint moves — a different cause or build.
+    /// Rendering that as "X → X" just confuses the reader.
     private func describe(_ entry: StateStore.Transition) -> String {
-        guard let from = entry.from else { return "처음 확인 · \(label(for: entry.to))" }
-        guard from != entry.to else { return "\(label(for: entry.to)) · 세부 변경" }
+        guard let from = entry.from else { return String(localized: "first seen · \(label(for: entry.to))") }
+        guard from != entry.to else { return String(localized: "\(label(for: entry.to)) · details changed") }
         return "\(label(for: from)) → \(label(for: entry.to))"
     }
 
@@ -222,19 +223,19 @@ struct AppDetailView: View {
         return f
     }()
 
-    /// 고급 사용자용 원본. 기본 접힘. (명세 §15, §29)
+    /// Raw payload for advanced use. Collapsed by default. (spec §15, §29)
     private var appleDetails: some View {
-        DisclosureGroup("Apple 원본 정보", isExpanded: $showsRawState) {
+        DisclosureGroup(String(localized: "Apple details"), isExpanded: $showsRawState) {
             VStack(alignment: .leading, spacing: 5) {
-                LabeledContent("상태 ID", value: app.status.state.id.rawValue)
+                LabeledContent(String(localized: "State ID"), value: app.status.state.id.rawValue)
                 if let reason = app.status.state.reason {
-                    LabeledContent("원인 코드", value: reason)
+                    LabeledContent(String(localized: "Reason code"), value: reason)
                 }
                 LabeledContent("Bundle ID", value: app.bundleID)
                 ForEach(app.status.state.rawEvidence.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in
                     LabeledContent(key, value: value)
                 }
-                Button("App Store Connect에서 열기") {
+                Button(String(localized: "Open in App Store Connect")) {
                     if let url = app.appStoreConnectURL { NSWorkspace.shared.open(url) }
                 }
                 .padding(.top, 5)
@@ -246,7 +247,7 @@ struct AppDetailView: View {
     }
 }
 
-/// 제목 + 내용 묶음.
+/// A titled block of content.
 struct Section2<Content: View>: View {
     let title: String
     @ViewBuilder let content: Content

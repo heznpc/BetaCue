@@ -15,14 +15,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: XcodeGen 설치
+      - name: Install XcodeGen
         run: brew install xcodegen
 
-      - name: 프로젝트 생성
+      - name: Generate project
         run: xcodegen generate
 
-      # DEVELOPMENT_TEAM이 비어 있어도 macOS 디버그 빌드는 애드혹 서명으로 통과한다.
-      - name: 테스트
+      # An empty DEVELOPMENT_TEAM is fine: macOS debug builds fall back to ad-hoc signing.
+      - name: Test
         run: |
           xcodebuild test \
             -project BetaCue.xcodeproj \

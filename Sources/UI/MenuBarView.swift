@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// 메뉴바 드롭다운. 홈의 축약판. (명세 §14)
+/// Menu-bar dropdown — the condensed home screen. (spec §14)
 ///
-/// 창을 열지 않고도 이상 유무를 판단할 수 있어야 한다.
+/// You should be able to tell whether anything is wrong without opening a window.
 struct MenuBarView: View {
     @Bindable var store: Store
     @Environment(\.openWindow) private var openWindow
@@ -10,12 +10,12 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if !store.isConfigured {
-                Text("App Store Connect 연결이 필요합니다")
+                Text(String(localized: "App Store Connect isn't connected yet"))
                     .font(.callout)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             } else if store.apps.isEmpty {
-                Text(store.isRefreshing ? "확인 중…" : "앱이 없습니다")
+                Text(store.isRefreshing ? String(localized: "Checking…") : String(localized: "No apps"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -30,7 +30,7 @@ struct MenuBarView: View {
 
             TimelineView(.periodic(from: .now, by: 10)) { context in
                 HStack {
-                    Text("마지막 확인: \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))")
+                    Text(String(localized: "Last checked \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))"))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
@@ -39,9 +39,9 @@ struct MenuBarView: View {
                 .padding(.bottom, 7)
             }
 
-            menuButton("새로고침", symbol: "arrow.clockwise") { store.refresh() }
-            menuButton("대시보드 열기", symbol: "macwindow") { openWindow(id: "main") }
-            menuButton("종료", symbol: "power") { NSApplication.shared.terminate(nil) }
+            menuButton(String(localized: "Refresh"), symbol: "arrow.clockwise") { store.refresh() }
+            menuButton(String(localized: "Open dashboard"), symbol: "macwindow") { openWindow(id: "main") }
+            menuButton(String(localized: "Quit"), symbol: "power") { NSApplication.shared.terminate(nil) }
         }
         .padding(.vertical, 7)
         .frame(width: 292)
@@ -59,7 +59,7 @@ struct MenuBarView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(app.name).font(.callout.weight(.medium))
                     Text(status.hasOlderTestableBuild
-                         ? "\(state.headline) · 이전 버전 테스트 가능"
+                         ? String(localized: "\(state.headline) · previous version testable")
                          : state.headline)
                         .font(.caption)
                         .foregroundStyle(.secondary)

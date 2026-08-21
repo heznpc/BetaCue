@@ -1,12 +1,12 @@
 import Foundation
 
-/// 조작 계층. 조회(`Collector`)와 분리한다. (명세 §25)
+/// Command layer, kept separate from reads (`Collector`). (spec §25)
 ///
-/// UI 버튼은 API 경로를 직접 부르지 않고 여기의 명령을 실행한다.
+/// UI buttons run commands from here rather than calling API paths directly.
 enum Commands {
-    /// 빌드를 베타 그룹에 연결한다 — 이 앱에서 사용자가 실제로 수행하는 유일한 쓰기 동작이다.
+    /// Attach a build to beta groups — the only write the user performs in this app.
     ///
-    /// 성공 응답이 204 No Content라 일반 `post`로 부르면 성공해도 디코딩에서 실패한다.
+    /// Success answers 204 No Content, so a plain `post` would fail decoding a successful call.
     static func assign(build buildID: String, toGroups groupIDs: [String],
                        using client: ASCClient) async throws
     {

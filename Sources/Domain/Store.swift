@@ -1,11 +1,11 @@
 import Foundation
 import Observation
 
-/// 화면이 보는 단 하나의 상태 소유자.
+/// The single source of state the UI observes.
 ///
-/// 파이프라인은 명세 §2.1 그대로다:
-/// ASC API → Collector → Normalizer → StateStore → RuleEngine → 사람이 읽는 상태 → UI.
-/// 이 경로에는 LLM 호출이 하나도 없다.
+/// The pipeline is spec §2.1 verbatim:
+/// ASC API → Collector → Normalizer → StateStore → RuleEngine → human-readable state → UI.
+/// There is not one LLM call on that path.
 @MainActor
 @Observable
 final class Store {
@@ -14,7 +14,7 @@ final class Store {
     private(set) var lastRefresh: Date?
     private(set) var isRefreshing = false
     private(set) var errorMessage: String?
-    /// 알림 권한. 거부되면 상태 변화를 알릴 수 없으므로 화면에서 알린다.
+    /// Notification permission. A denial means no state change can be announced, so the UI says so.
     private(set) var notificationPermission: Notifier.Permission = .unknown
 
     var config: BetaCueConfig {
@@ -28,28 +28,28 @@ final class Store {
 
     var isConfigured: Bool { client != nil }
 
-    /// 창이 닫혀 있어도 폴링과 알림은 계속돼야 하므로 앱 수명과 같은 인스턴스를 쓴다.
+    /// Polling and notifications outlive any window, so this instance lives as long as the app.
     static let shared = Store()
 
     init(config: BetaCueConfig = .load(), persistence: StateStore = StateStore()) {
         self.config = config
         self.persistence = persistence
         self.client = config.credentials.map { ASCClient(credentials: $0) }
-        // 네트워크를 기다리지 않고 마지막으로 본 상태를 즉시 보여준다. (명세 UC-01 ①)
+        // Show the last known state immediately instead of waiting on the network. (spec UC-01 ①)
         self.apps = Self.sorted(persistence.loadSnapshots())
         self.lastRefresh = apps.map(\.fetchedAt).max()
     }
 
-    // MARK: - 폴링 (명세 §22)
+    // MARK: - Polling (spec §22)
 
-    /// 처리 중인 빌드가 있으면 1분, 평소엔 5분, 조용하면 15분.
+    /// One minute while a build processes, five when something needs attention, fifteen when quiet.
     private var pollInterval: TimeInterval {
         if apps.contains(where: { $0.status.state.id == .buildProcessing }) { return 60 }
         if apps.contains(where: { $0.status.state.severity == .warning }) { return 300 }
         return apps.isEmpty ? 300 : 900
     }
 
-    /// 알림 권한을 확인·요청하고 결과를 보관한다.
+    /// Checks or requests notification permission and remembers the answer.
     func prepareNotifications() {
         Task { [weak self] in
             let current = await Notifier.currentPermission()
@@ -70,7 +70,7 @@ final class Store {
         }
     }
 
-    /// 수동 새로고침. (명세 §22 마지막 줄)
+    /// Manual refresh. (spec §22, last line)
     func refresh() {
         guard refreshTask == nil else { return }
         refreshTask = Task { [weak self] in
@@ -90,7 +90,7 @@ final class Store {
         do {
             let appList: ASCList<AppAttributes> = try await client.get("/v1/apps?limit=200")
 
-            // 앱 하나가 실패해도 나머지는 갱신돼야 한다. 실패한 앱은 마지막 상태를 유지한다.
+            // One app failing must not block the rest; the failed one keeps its last state.
             var collected: [AppSnapshot] = []
             var failedNames: [String] = []
             await withTaskGroup(of: Result<AppSnapshot, Error>.self) { group in
@@ -104,9 +104,9 @@ final class Store {
                     switch result {
                     case .success(let snapshot): collected.append(snapshot)
                     case .failure(let error):
-                        let name = (error as? AppLoadFailure)?.name ?? "앱"
+                        let name = (error as? AppLoadFailure)?.name ?? String(localized: "the app")
                         failedNames.append(name)
-                        // 새로 못 읽었으면 직전 스냅샷을 그대로 둔다 — 화면이 비지 않게.
+                        // Keep the previous snapshot rather than blanking the row.
                         if let stale = apps.first(where: { $0.name == name }) {
                             collected.append(stale)
                         }
@@ -125,13 +125,13 @@ final class Store {
             lastRefresh = Date()
             errorMessage = failedNames.isEmpty
                 ? nil
-                : "\(failedNames.joined(separator: ", "))을(를) 읽지 못해 이전 상태를 표시합니다."
+                : String(localized: "Couldn't read \(failedNames.joined(separator: ", ")); showing the previous state.")
         } catch {
             errorMessage = (error as? ASCError)?.localizedDescription ?? error.localizedDescription
         }
     }
 
-    /// 조치가 필요한 것부터, 그다음 이름순. (명세 §13)
+    /// Needs-attention first, then alphabetical. (spec §13)
     private static func sorted(_ list: [AppSnapshot]) -> [AppSnapshot] {
         list.sorted {
             let a = $0.status.state.severity, b = $1.status.state.severity
@@ -141,11 +141,11 @@ final class Store {
         }
     }
 
-    // MARK: - 전이 감지와 알림 (명세 §12, §21)
+    // MARK: - Transition detection and notification (spec §12, §21)
 
     private func detectAndNotify(_ next: [AppSnapshot]) {
         for snapshot in next {
-            // 부분 실패로 되돌려 쓴 이전 스냅샷은 전이로 치지 않는다.
+            // A snapshot carried over from a partial failure is not a transition.
             guard !snapshot.isPartial || snapshot.fetchedAt > (lastRefresh ?? .distantPast) else {
                 continue
             }
@@ -156,7 +156,7 @@ final class Store {
             persistence.recordTransition(appID: snapshot.id, from: previous?.state,
                                          to: current.id, fingerprint: current.fingerprint)
 
-            // 첫 조회에서는 알리지 않는다. 알림이 한꺼번에 쏟아지는 것을 막는다.
+            // Never notify on the first fetch, or every app announces itself at once.
             guard let previousState = previous?.state else { continue }
             guard let message = notificationText(app: snapshot, from: previousState, to: current)
             else { continue }
@@ -164,7 +164,7 @@ final class Store {
         }
     }
 
-    /// 모든 변경을 알리지 않는다. 알릴 가치가 있는 전이만 정의한다. (명세 §12)
+    /// Not every change deserves a banner. Only these transitions do. (spec §12)
     private func notificationText(app: AppSnapshot, from: AppStateID, to: AppStateDefinition)
         -> (title: String, body: String)?
     {
@@ -174,29 +174,29 @@ final class Store {
         case (.buildProcessing, .internalTestingReady),
              (.buildProcessing, .externalTestingReady),
              (.buildProcessing, .externalReviewRequired):
-            return ("\(app.name) 테스트 준비 완료",
-                    version.isEmpty ? "아이폰 TestFlight에서 설치할 수 있습니다."
-                                    : "\(version) — 아이폰 TestFlight에서 설치할 수 있습니다.")
+            return (String(localized: "\(app.name) is ready to test"),
+                    version.isEmpty ? String(localized: "You can install it from TestFlight on your iPhone.")
+                                    : String(localized: "\(version) — install it from TestFlight on your iPhone."))
 
         case (.buildProcessing, .buildReadyNotDistributed):
-            return ("\(app.name) 배포 대상 없음", to.blocker ?? to.description)
+            return (String(localized: "\(app.name) reaches nobody"), to.blocker ?? to.description)
 
         case (_, .buildInvalid) where app.status.testable != nil:
             let alive = app.status.testable?.displayVersion ?? ""
-            return ("\(app.name) 새 빌드 거부됨", "\(alive)은(는) 계속 테스트할 수 있습니다.")
+            return (String(localized: "\(app.name) new build rejected"), String(localized: "\(alive) is still testable."))
 
         case (.externalReviewPending, .externalTestingReady):
-            return ("\(app.name) 외부 테스트 승인됨", "외부 테스터에게 배포할 수 있습니다.")
+            return (String(localized: "\(app.name) approved for external testing"), String(localized: "You can now distribute to external testers."))
 
         case (_, .buildInvalid):
-            return ("\(app.name) 빌드 거부됨", to.description)
+            return (String(localized: "\(app.name) build rejected"), to.description)
 
         case (_, .actionRequired), (_, .unknown):
-            // 이전에 없던 blocker가 생긴 경우만.
-            return ("\(app.name) 조치 필요", to.blocker ?? to.description)
+            // Only when a blocker appears that was not there before.
+            return (String(localized: "\(app.name) needs attention"), to.blocker ?? to.description)
 
         case (_, .buildReadyNotDistributed):
-            return ("\(app.name) 배포 대상 없음", to.blocker ?? to.description)
+            return (String(localized: "\(app.name) reaches nobody"), to.blocker ?? to.description)
 
         default:
             return nil
@@ -208,18 +208,18 @@ final class Store {
             guard let days = cert.daysLeft, days >= 0 else { continue }
             let previous = persistence.exchangeFeedbackCount(
                 appID: "certificate:\(cert.id)", kind: "expiry-notified", newCount: 1)
-            guard previous == nil else { continue }   // 인증서당 한 번만
-            Notifier.post(title: "인증서 만료 임박",
-                          body: "\(cert.name) — \(days)일 뒤 만료됩니다.")
+            guard previous == nil else { continue }   // once per certificate
+            Notifier.post(title: String(localized: "Certificate expiring soon"),
+                          body: String(localized: "\(cert.name) expires in \(days) days."))
         }
     }
 
-    // MARK: - 명령 (명세 §25)
+    // MARK: - Commands (spec §25)
 
-    /// 진행 중인 명령. 버튼 비활성화와 진행 표시에 쓴다.
+    /// Command in flight, used to disable buttons and show progress.
     private(set) var runningCommand: String?
 
-    /// 빌드를 그룹에 연결한다. v0에서 유일한 쓰기 동작이다. (명세 §26)
+    /// Attach a build to groups — the only write in v0. (spec §26)
     func distribute(build: BuildSnapshot, of app: AppSnapshot, to groups: [GroupSnapshot]) {
         guard let client, runningCommand == nil else { return }
         runningCommand = app.id
@@ -235,19 +235,19 @@ final class Store {
         }
     }
 
-    /// 이 빌드를 붙일 후보 그룹. 이미 붙어 있는 곳은 뺀다.
+    /// Groups this build could be attached to, excluding the ones it already belongs to.
     func distributionTargets(for build: BuildSnapshot, in app: AppSnapshot) -> [GroupSnapshot] {
         app.groups.filter { !build.assignedGroupIDs.contains($0.id) }
     }
 
-    // MARK: - 조회 보조
+    // MARK: - Read helpers
 
     func transitions(for app: AppSnapshot) -> [StateStore.Transition] {
         persistence.transitions(appID: app.id)
     }
 }
 
-/// 어느 앱이 실패했는지 알아야 그 앱만 이전 상태로 되돌릴 수 있다.
+/// Knowing which app failed is what lets only that app fall back to its previous state.
 struct AppLoadFailure: Error {
     var name: String
     var underlying: Error

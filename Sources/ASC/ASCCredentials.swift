@@ -1,9 +1,9 @@
 import Foundation
 
-/// App Store Connect API 자격증명.
+/// App Store Connect API credentials.
 ///
-/// 키 파일은 Apple이 정한 자리(`~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8`)에
-/// 그대로 둔다. 앱은 경로만 알고 있고 키를 복사하거나 옮기지 않는다.
+/// The key file stays where Apple puts it (`~/.appstoreconnect/private_keys/AuthKey_<KeyID>.p8`).
+/// BetaCue only remembers the path; it never copies or relocates the key.
 struct ASCCredentials: Equatable, Sendable {
     var keyID: String
     var issuerID: String
@@ -24,7 +24,7 @@ struct ASCCredentials: Equatable, Sendable {
         }
     }
 
-    /// 키 디렉터리에 실재하는 Key ID 목록. 온보딩에서 고르게 한다.
+    /// Key IDs actually present in the key directory. Onboarding lets you pick one.
     static func discoverKeyIDs() -> [String] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: keyDirectory.path)) ?? []
         return names
@@ -34,21 +34,21 @@ struct ASCCredentials: Equatable, Sendable {
     }
 }
 
-// MARK: - 설정 저장
+// MARK: - Persisted configuration
 
-/// `~/.config/betacue/config.json`. 키 자체는 절대 담지 않는다 — Key ID와 Issuer ID뿐이다.
+/// `~/.config/betacue/config.json`. Never holds the key itself — only the Key ID and Issuer ID.
 struct BetaCueConfig: Codable, Equatable, Sendable {
     var keyID: String = ""
     var issuerID: String = ""
-    /// 번들 ID → 로컬 프로젝트. 업로드 기능이 쓴다.
+    /// Bundle ID to local project. Used by the upload feature.
     var projects: [String: ProjectRef] = [:]
 
     struct ProjectRef: Codable, Equatable, Sendable {
         var kind: Kind
-        /// .xcodeproj 경로
+        /// Path to the .xcodeproj
         var projectPath: String
         var scheme: String
-        /// Unity 익스포트처럼 CFBundleVersion이 리터럴인 경우 직접 고쳐야 한다.
+        /// When CFBundleVersion is a literal (as in Unity exports) it has to be edited directly.
         var infoPlistPath: String?
 
         enum Kind: String, Codable, Sendable {

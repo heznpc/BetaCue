@@ -1,0 +1,1461 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    " · %@": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "%@ (HTTP %lld)": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "%@ approved for external testing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 외부 테스트 승인됨"
+          }
+        }
+      }
+    },
+    "%@ build rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 빌드 거부됨"
+          }
+        }
+      }
+    },
+    "%@ expires in %lld days.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — %lld일 뒤 만료됩니다."
+          }
+        }
+      }
+    },
+    "%@ is ready to test": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 테스트 준비 완료"
+          }
+        }
+      }
+    },
+    "%@ is still testable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@은(는) 계속 테스트 가능"
+          }
+        }
+      }
+    },
+    "%@ is still testable.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@은(는) 계속 테스트할 수 있습니다."
+          }
+        }
+      }
+    },
+    "%@ is what you can test right now": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 %@을(를) 테스트할 수 있습니다"
+          }
+        }
+      }
+    },
+    "%@ needs attention": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 조치 필요"
+          }
+        }
+      }
+    },
+    "%@ new build rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 새 빌드 거부됨"
+          }
+        }
+      }
+    },
+    "%@ reaches nobody": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ 배포 대상 없음"
+          }
+        }
+      }
+    },
+    "%@ · %@": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "%@ · details changed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 세부 변경"
+          }
+        }
+      }
+    },
+    "%@ · previous version testable": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ · 이전 버전 테스트 가능"
+          }
+        }
+      }
+    },
+    "%@ — install it from TestFlight on your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@ — 아이폰 TestFlight에서 설치할 수 있습니다."
+          }
+        }
+      }
+    },
+    "%@. Taking longer than usual, but there is nothing to do.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@. 평소보다 오래 걸리고 있으나 조치할 것은 없습니다."
+          }
+        }
+      }
+    },
+    "%@. You'll get a notification when it finishes.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@. 완료되면 알림을 보냅니다."
+          }
+        }
+      }
+    },
+    "%lld days left": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld일 남음"
+          }
+        }
+      }
+    },
+    "%lld earlier entries": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 기록 %lld건 더 있음"
+          }
+        }
+      }
+    },
+    "%lld external": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부 %lld명"
+          }
+        }
+      }
+    },
+    "%lld individual": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개별 %lld명"
+          }
+        }
+      }
+    },
+    "%lld internal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내부 %lld명"
+          }
+        }
+      }
+    },
+    "%lld people": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld명"
+          }
+        }
+      }
+    },
+    "%lldd ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld일 전"
+          }
+        }
+      }
+    },
+    "%lldh ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld시간 전"
+          }
+        }
+      }
+    },
+    "%lldm ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분 전"
+          }
+        }
+      }
+    },
+    "%llds ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld초 전"
+          }
+        }
+      }
+    },
+    "A check means the latest build is attached to that group. ": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "체크 표시는 최신 빌드가 그 그룹에 연결됐다는 뜻입니다. "
+          }
+        }
+      }
+    },
+    "App Store Connect isn't connected yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect 연결이 필요합니다"
+          }
+        }
+      }
+    },
+    "App Store Connect key is not configured yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect 키가 아직 설정되지 않았습니다."
+          }
+        }
+      }
+    },
+    "Apple details": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 원본 정보"
+          }
+        }
+      }
+    },
+    "Apple is processing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple 처리 중"
+          }
+        }
+      }
+    },
+    "Apple rejected build %@. You'll need to upload a new one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 빌드 %@을(를) 거부했습니다. 새 빌드를 올려야 합니다."
+          }
+        }
+      }
+    },
+    "Apple rejected this build.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 이 빌드를 거부했습니다."
+          }
+        }
+      }
+    },
+    "Apple rejected this build. You'll need to upload a new one.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 이 빌드를 거부했습니다. 새 빌드를 올려야 합니다."
+          }
+        }
+      }
+    },
+    "Apple returned a value BetaCue doesn't recognize. Check the raw payload below or look in App Store Connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 예상하지 못한 값을 반환했습니다. 아래 원본을 확인하거나 App Store Connect에서 직접 보십시오."
+          }
+        }
+      }
+    },
+    "Apple turned down external testing. The reason is in App Store Connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 외부 테스트를 반려했습니다. 사유는 App Store Connect에서 확인할 수 있습니다."
+          }
+        }
+      }
+    },
+    "BetaCue": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Build rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 거부됨"
+          }
+        }
+      }
+    },
+    "Bundle ID": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "Certificate expiring soon": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서 만료 임박"
+          }
+        }
+      }
+    },
+    "Certificates": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서"
+          }
+        }
+      }
+    },
+    "Checking": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중"
+          }
+        }
+      }
+    },
+    "Checking…": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "확인 중…"
+          }
+        }
+      }
+    },
+    "Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결"
+          }
+        }
+      }
+    },
+    "Connect App Store Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect 연결"
+          }
+        }
+      }
+    },
+    "Copy public link": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공개 링크 복사"
+          }
+        }
+      }
+    },
+    "Could not determine state": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 판별 불가"
+          }
+        }
+      }
+    },
+    "Couldn't parse the response: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "응답을 해석하지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't reach App Store Connect: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect에 연결하지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't read %@; showing the previous state.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@을(를) 읽지 못해 이전 상태를 표시합니다."
+          }
+        }
+      }
+    },
+    "Couldn't read distributed builds for the '%@' group.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'%@' 그룹의 배포 빌드를 읽지 못했습니다."
+          }
+        }
+      }
+    },
+    "Couldn't read distribution state for build %@.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 %@의 배포 상태를 읽지 못했습니다."
+          }
+        }
+      }
+    },
+    "Couldn't read testers for the '%@' group.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "'%@' 그룹의 테스터를 읽지 못했습니다."
+          }
+        }
+      }
+    },
+    "Couldn't read the key file: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 파일을 읽지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't save settings: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정을 저장하지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Create an API key in App Store Connect and put the downloaded .p8 file here.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect에서 API 키를 만들고 내려받은 .p8 파일을 아래 위치에 두세요."
+          }
+        }
+      }
+    },
+    "Current version": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 버전"
+          }
+        }
+      }
+    },
+    "Distribute in App Store Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect에서 배포"
+          }
+        }
+      }
+    },
+    "Distribute to %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@에 배포"
+          }
+        }
+      }
+    },
+    "Distribute to testers": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스터에게 배포"
+          }
+        }
+      }
+    },
+    "Distribution waits on the export compliance question. Answer it once in App Store Connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "수출 규정(암호화 사용 여부)에 답해야 배포가 진행됩니다. App Store Connect에서 한 번만 답하면 됩니다."
+          }
+        }
+      }
+    },
+    "Earlier versions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 버전"
+          }
+        }
+      }
+    },
+    "Expired": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만료됨"
+          }
+        }
+      }
+    },
+    "Expires": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "만료"
+          }
+        }
+      }
+    },
+    "External": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부"
+          }
+        }
+      }
+    },
+    "External testers get it once review finishes, usually within a day. Nothing to do right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "심사가 끝나면 외부 테스터에게 배포됩니다. 보통 하루 안에 끝나며 지금 할 일은 없습니다."
+          }
+        }
+      }
+    },
+    "In external beta review": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부 심사 중"
+          }
+        }
+      }
+    },
+    "Individual invites": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개별 초대"
+          }
+        }
+      }
+    },
+    "Internal": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내부"
+          }
+        }
+      }
+    },
+    "Internal and external testing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내부·외부 테스트 가능"
+          }
+        }
+      }
+    },
+    "Internal testers and the external testers you invited can all install it.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내부 테스터와 초대한 외부 테스터 모두 설치할 수 있습니다."
+          }
+        }
+      }
+    },
+    "Internal testing only": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내부 테스트 가능"
+          }
+        }
+      }
+    },
+    "Invalid path: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잘못된 경로: %@"
+          }
+        }
+      }
+    },
+    "Issuer ID": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "It's at the top of App Store Connect → Users and Access → Integrations.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect → 사용자 및 액세스 → 통합 화면 상단에 있습니다."
+          }
+        }
+      }
+    },
+    "Key": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키"
+          }
+        }
+      }
+    },
+    "Last checked %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 확인: %@"
+          }
+        }
+      }
+    },
+    "Needs attention": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조치 필요"
+          }
+        }
+      }
+    },
+    "New builds distribute automatically": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 빌드가 자동으로 배포됩니다"
+          }
+        }
+      }
+    },
+    "No apps": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱이 없습니다"
+          }
+        }
+      }
+    },
+    "No build uploaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업로드된 빌드 없음"
+          }
+        }
+      }
+    },
+    "No key file found": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 파일을 찾지 못했습니다"
+          }
+        }
+      }
+    },
+    "No test audience is connected.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트 대상이 연결되어 있지 않습니다."
+          }
+        }
+      }
+    },
+    "Not distributed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "미배포"
+          }
+        }
+      }
+    },
+    "Nothing loaded yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 불러오지 않았습니다."
+          }
+        }
+      }
+    },
+    "Notifications are off, so state changes can't be announced": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알림이 꺼져 있어 상태 변화를 알려드릴 수 없습니다"
+          }
+        }
+      }
+    },
+    "Open Settings": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설정 열기"
+          }
+        }
+      }
+    },
+    "Open dashboard": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대시보드 열기"
+          }
+        }
+      }
+    },
+    "Open in App Store Connect": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect에서 열기"
+          }
+        }
+      }
+    },
+    "Quit": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "종료"
+          }
+        }
+      }
+    },
+    "Reaches nobody": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배포 대상 없음"
+          }
+        }
+      }
+    },
+    "Reading your app status needs an API key from Apple. Leave the key file where it is and just give the identifiers.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 앱 상태를 읽어오려면 Apple에서 발급한 API 키가 필요합니다. 키 파일은 그대로 두고 식별자만 알려주면 됩니다."
+          }
+        }
+      }
+    },
+    "Ready to test": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트 가능"
+          }
+        }
+      }
+    },
+    "Reason code": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "원인 코드"
+          }
+        }
+      }
+    },
+    "Refresh": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새로고침"
+          }
+        }
+      }
+    },
+    "Rejected": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "거부됨"
+          }
+        }
+      }
+    },
+    "Select": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "선택"
+          }
+        }
+      }
+    },
+    "Select an app": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱을 선택하세요"
+          }
+        }
+      }
+    },
+    "Some information couldn't be read": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "일부 정보를 읽지 못했습니다"
+          }
+        }
+      }
+    },
+    "Something is blocking progress.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "진행을 막고 있는 항목이 있습니다."
+          }
+        }
+      }
+    },
+    "State": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태"
+          }
+        }
+      }
+    },
+    "State ID": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 ID"
+          }
+        }
+      }
+    },
+    "State history": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 기록"
+          }
+        }
+      }
+    },
+    "That key file isn't in the expected format. Check that it's the .p8 Apple gave you.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "키 파일이 올바른 형식이 아닙니다. Apple에서 받은 .p8 파일이 맞는지 확인하세요."
+          }
+        }
+      }
+    },
+    "The attached groups have no testers and no public link.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "연결된 그룹에 등록된 테스터가 없고 공개 링크도 꺼져 있습니다."
+          }
+        }
+      }
+    },
+    "The build is fine but no tester is connected to it. In this state it appears on no device.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드는 정상이지만 연결된 테스터가 없습니다. 이 상태로는 어떤 기기에도 나타나지 않습니다."
+          }
+        }
+      }
+    },
+    "The request was refused": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "요청이 거부되었습니다"
+          }
+        }
+      }
+    },
+    "The upload finished. Once processing completes you can test it. Nothing to do right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업로드는 완료됐습니다. 처리가 끝나면 테스트할 수 있으며 지금 할 일은 없습니다."
+          }
+        }
+      }
+    },
+    "There is an App Store Connect record but no build has ever been sent.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "App Store Connect에 앱 레코드만 있고 빌드를 보낸 적이 없습니다."
+          }
+        }
+      }
+    },
+    "There is no tester group.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스터 그룹이 없습니다."
+          }
+        }
+      }
+    },
+    "This build expired. TestFlight builds stop installing 90 days after upload.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 빌드는 만료됐습니다. TestFlight 빌드는 업로드 후 90일이 지나면 설치할 수 없습니다."
+          }
+        }
+      }
+    },
+    "This build is attached to no group.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 빌드가 어떤 그룹에도 연결되지 않았습니다."
+          }
+        }
+      }
+    },
+    "Unnamed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이름 없음"
+          }
+        }
+      }
+    },
+    "Uploaded": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "업로드"
+          }
+        }
+      }
+    },
+    "Version": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "버전"
+          }
+        }
+      }
+    },
+    "Who can test this": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "누가 테스트할 수 있나"
+          }
+        }
+      }
+    },
+    "You can install it from TestFlight on your iPhone right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아이폰 TestFlight 앱에서 바로 설치할 수 있습니다."
+          }
+        }
+      }
+    },
+    "You can install it from TestFlight on your iPhone.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아이폰 TestFlight에서 설치할 수 있습니다."
+          }
+        }
+      }
+    },
+    "You can install it now": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금 설치할 수 있습니다"
+          }
+        }
+      }
+    },
+    "You can install it yourself. Sending it to external testers takes one Apple review.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "내 기기에서는 설치할 수 있습니다. 외부 테스터에게 보내려면 Apple 심사를 한 번 거쳐야 합니다."
+          }
+        }
+      }
+    },
+    "You can now distribute to external testers.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "외부 테스터에게 배포할 수 있습니다."
+          }
+        }
+      }
+    },
+    "build %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 %@"
+          }
+        }
+      }
+    },
+    "first seen · %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "처음 확인 · %@"
+          }
+        }
+      }
+    },
+    "just now": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "방금"
+          }
+        }
+      }
+    },
+    "never": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아직 없음"
+          }
+        }
+      }
+    },
+    "no audience": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "대상 없음"
+          }
+        }
+      }
+    },
+    "none": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "없음"
+          }
+        }
+      }
+    },
+    "public link": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "공개 링크"
+          }
+        }
+      }
+    },
+    "the app": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "앱"
+          }
+        }
+      }
+    },
+    "unrecognized date format: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "날짜 형식을 알 수 없음: %@"
+          }
+        }
+      }
+    },
+    "uploaded %lld hours ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld시간 전에 업로드됨"
+          }
+        }
+      }
+    },
+    "uploaded %lld minutes ago": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld분 전에 업로드됨"
+          }
+        }
+      }
+    },
+    "~/.appstoreconnect/private_keys/": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "—": {
+      "extractionState": "manual",
+      "shouldTranslate": false
+    },
+    "↻ means new builds distribute automatically; the link icon means a public link.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "↻는 새 빌드 자동 배포, 링크 아이콘은 공개 링크입니다."
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

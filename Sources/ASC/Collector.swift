@@ -1,11 +1,11 @@
 import Foundation
 
-/// Apple 응답을 정규화 스키마로 바꾸는 계층. (명세 §18)
+/// Turns Apple's responses into the normalized schema. (spec §18)
 ///
-/// 앱 다섯 개를 순차 조회하면 20초가 걸린다. 전부 동시에 던진다.
-/// 부수 조회는 실패해도 던지지 않는다 — 앱 하나가 404를 뱉어도 나머지 앱의 갱신은 살아야 한다.
+/// Five apps fetched serially take 20 seconds, so everything goes out concurrently.
+/// Secondary fetches never throw — one app returning 404 must not stop the others from refreshing.
 enum Collector {
-    /// 한 앱에서 가져오는 빌드 개수. 히스토리 표시용이라 제품 정책으로 제한한다.
+    /// Builds fetched per app. Capped by product decision since it only feeds the history list.
     private static let buildHistoryLimit = 10
     private static let groupLimit = 50
     private static let testerLimit = 200
@@ -13,8 +13,8 @@ enum Collector {
     static func loadApp(_ app: ASCResource<AppAttributes>, using client: ASCClient) async throws
         -> AppSnapshot
     {
-        // iOS 대시보드이므로 플랫폼을 고정한다. 안 걸면 같은 앱의 macOS 빌드가
-        // "최신 빌드"로 잡혀 엉뚱한 상태를 말하게 된다.
+        // This is an iOS dashboard, so pin the platform. Without it a macOS build of the same
+        // app can win "latest build" and the reported state becomes wrong.
         async let groupsRaw: [ASCResource<BetaGroupAttributes>] =
             client.getAllPages("/v1/apps/\(app.id)/betaGroups?limit=\(groupLimit)")
         async let buildsRaw: ASCList<BuildAttributes> =
@@ -31,8 +31,8 @@ enum Collector {
 
         problems += groups.problems + builds.problems
 
-        // 어떤 빌드가 어떤 그룹에 붙어 있는지는 그룹 쪽에서만 읽을 수 있다.
-        // (build → betaGroups 관계는 GET_RELATED를 허용하지 않는다.)
+        // Which build belongs to which group is only readable from the group side.
+        // (The build → betaGroups relationship does not allow GET_RELATED.)
         let assignment = await loadAssignments(groups.value, using: client)
         problems += assignment.problems
         for index in builds.value.indices {
@@ -50,7 +50,7 @@ enum Collector {
             partialErrors: problems)
     }
 
-    /// 값과 그 값을 만드는 동안 생긴 문제를 함께 나른다.
+    /// Carries a value together with whatever went wrong while producing it.
     private struct Partial<T: Sendable>: Sendable {
         var value: T
         var problems: [String] = []
@@ -65,7 +65,7 @@ enum Collector {
         await withTaskGroup(of: (GroupSnapshot, String?).self) { tg in
             for g in list {
                 tg.addTask {
-                    // 전 페이지를 세지 않으면 200명에서 잘려 "받을 사람 없음"을 오판한다.
+                    // Counting one page truncates at 200 and misjudges the group as reaching nobody.
                     let testers = try? await client.getAllPages(
                         "/v1/betaGroups/\(g.id)/betaTesters?limit=\(testerLimit)",
                         as: BetaTesterAttributes.self)
@@ -79,7 +79,7 @@ enum Collector {
                         publicLink: g.attributes.publicLink,
                         testerCountIsExact: testers != nil)
                     let problem = testers == nil
-                        ? "'\(g.attributes.name)' 그룹의 테스터를 읽지 못했습니다." : nil
+                        ? String(localized: "Couldn't read testers for the '\(g.attributes.name)' group.") : nil
                     return (snapshot, problem)
                 }
             }
@@ -89,7 +89,7 @@ enum Collector {
             }
         }
 
-        // 내부 그룹 먼저, 그다음 이름순.
+        // Internal groups first, then by name.
         groups.sort {
             $0.isInternal == $1.isInternal
                 ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
@@ -106,7 +106,7 @@ enum Collector {
         await withTaskGroup(of: (Int, BuildSnapshot, String?).self) { tg in
             for (index, b) in list.data.enumerated() {
                 tg.addTask {
-                    // 마케팅 버전은 빌드가 아니라 preReleaseVersion에 있다.
+                    // The marketing version lives on preReleaseVersion, not on the build.
                     async let detail: ASCSingle<BuildBetaDetailAttributes>? =
                         client.getOrNil("/v1/builds/\(b.id)/buildBetaDetail")
                     async let preRelease: ASCSingle<PreReleaseVersionAttributes>? =
@@ -129,18 +129,18 @@ enum Collector {
                         isExpired: b.attributes.expired ?? false,
                         individualTesterCount: ind?.count ?? 0)
                     let problem = d == nil
-                        ? "빌드 \(b.attributes.version ?? b.id)의 배포 상태를 읽지 못했습니다." : nil
+                        ? String(localized: "Couldn't read distribution state for build \(b.attributes.version ?? b.id).") : nil
                     return (index, snapshot, problem)
                 }
             }
             for await triple in tg { indexed.append(triple) }
         }
 
-        indexed.sort { $0.0 < $1.0 }   // 업로드 최신순(서버 정렬) 유지
+        indexed.sort { $0.0 < $1.0 }   // keep the server's newest-upload-first order
         return Partial(value: indexed.map(\.1), problems: indexed.compactMap(\.2))
     }
 
-    /// 그룹 ID → 그 그룹에 연결된 빌드 ID 집합.
+    /// Group ID to the set of build IDs attached to that group.
     private static func loadAssignments(
         _ groups: [GroupSnapshot], using client: ASCClient
     ) async -> Partial<[String: Set<String>]> {
@@ -153,7 +153,7 @@ enum Collector {
                     guard let ids = try? await client.getAllRelationshipIDs(
                         "/v1/betaGroups/\(group.id)/relationships/builds?limit=200")
                     else {
-                        return (group.id, nil, "'\(group.name)' 그룹의 배포 빌드를 읽지 못했습니다.")
+                        return (group.id, nil, String(localized: "Couldn't read distributed builds for the '\(group.name)' group."))
                     }
                     return (group.id, Set(ids), nil)
                 }
@@ -172,7 +172,7 @@ enum Collector {
             .map {
                 CertificateSnapshot(
                     id: $0.id,
-                    name: $0.attributes.name ?? "이름 없음",
+                    name: $0.attributes.name ?? String(localized: "Unnamed"),
                     type: $0.attributes.certificateType ?? "",
                     expiresAt: $0.attributes.expirationDate)
             }

@@ -1,9 +1,9 @@
 import Foundation
 
-/// 내부 도메인 상태. Apple API 객체를 UI에 직접 매핑하지 않기 위한 중간 계층. (명세 §16)
+/// Internal domain state — the layer that keeps Apple's API objects from reaching the UI. (spec §16)
 ///
-/// 여기서 정의하는 문구가 제품의 본체다. Apple은 `processingState`,
-/// `internalBuildState`, `externalBuildState`를 따로 주고 그 조합의 의미는 알려주지 않는다.
+/// The wording defined here is the product. Apple hands you `processingState`,
+/// `internalBuildState` and `externalBuildState` separately and never says what the combination means.
 enum AppStateID: String, Codable, Sendable, CaseIterable {
     case noBuild = "NO_BUILD"
     case buildProcessing = "BUILD_PROCESSING"
@@ -31,7 +31,7 @@ enum Severity: Int, Codable, Comparable, Sendable {
         }
     }
 
-    /// 메뉴바 축약 표기. (명세 §14)
+    /// Compact glyph for the menu bar. (spec §14)
     var glyph: String {
         switch self {
         case .warning: return "⚠"
@@ -42,19 +42,19 @@ enum Severity: Int, Codable, Comparable, Sendable {
     }
 }
 
-/// 알림을 언제 보낼지. (명세 §16, §12)
+/// When to notify. (spec §16, §12)
 enum NotificationPolicy: String, Codable, Sendable {
-    /// 이 상태를 벗어날 때 알린다. (예: 처리 중 → 준비 완료)
+    /// Notify on leaving this state (processing → ready, for example).
     case notifyWhenLeaving
-    /// 이 상태에 들어올 때 알린다. (예: 배포 누락 발생)
+    /// Notify on entering this state (a build stranded with no audience, for example).
     case notifyWhenEntering
-    /// 알리지 않는다.
+    /// Never notify.
     case silent
 }
 
-/// 사용자가 실제로 누를 수 있는 행동. v0 범위는 두 개뿐이다. (명세 §26)
+/// What the user can actually press. v0 has exactly two. (spec §26)
 ///
-/// 업로드 파이프라인·테스터 CRUD·public link 설정은 §27에 따라 v0에서 제외한다.
+/// Upload automation, tester CRUD and public-link settings are out of v0 per §27.
 enum NextAction: String, Codable, Sendable, Identifiable {
     case assignBuildToGroup = "ASSIGN_BUILD_TO_GROUP"
     case openInAppStoreConnect = "OPEN_IN_APP_STORE_CONNECT"
@@ -63,8 +63,8 @@ enum NextAction: String, Codable, Sendable, Identifiable {
 
     var title: String {
         switch self {
-        case .assignBuildToGroup:    return "테스터에게 배포"
-        case .openInAppStoreConnect: return "App Store Connect에서 열기"
+        case .assignBuildToGroup:    return String(localized: "Distribute to testers")
+        case .openInAppStoreConnect: return String(localized: "Open in App Store Connect")
         }
     }
 
@@ -76,29 +76,29 @@ enum NextAction: String, Codable, Sendable, Identifiable {
     }
 }
 
-/// 상태 하나의 완전한 정의. (명세 §16의 구조)
+/// The complete definition of one state. (structure from spec §16)
 struct AppStateDefinition: Sendable, Equatable {
     var id: AppStateID
-    /// 같은 상태 안의 서로 다른 원인을 구분한다.
+    /// Distinguishes different causes inside one state.
     ///
-    /// `ACTION_REQUIRED` 하나에 수출 규정 누락·만료·심사 반려가 전부 들어간다.
-    /// 이게 없으면 원인이 바뀌어도 전이가 없는 것으로 보여 알림이 안 나간다.
+    /// `ACTION_REQUIRED` alone covers missing export compliance, expiry and beta rejection.
+    /// Without this a change of cause looks like no transition at all, and nothing notifies.
     var reason: String?
     var severity: Severity
     var headline: String
     var description: String
-    /// 막힌 이유. 없으면 nil.
+    /// What is blocking progress, or nil.
     var blocker: String?
-    /// 지금 가장 적합한 행동 하나. 여러 개를 동시에 던지지 않는다. (명세 §11)
+    /// The single most appropriate action right now — never a menu of them. (spec §11)
     var nextAction: NextAction?
     var notificationPolicy: NotificationPolicy
-    /// 판정 근거가 된 Apple 원본 값. (명세 §15, §29)
+    /// The raw Apple values the decision rests on. (spec §15, §29)
     var rawEvidence: [String: String]
 
-    /// 화면에 제목과 나란히 붙일 Apple 원어.
+    /// Apple's own term, shown beside the headline.
     ///
-    /// 명세 §9가 금지하는 것은 원어를 **단독으로** 띄우는 것이지 원어 자체가 아니다.
-    /// 해석한 문장 옆에 두면 Apple 문서 검색이나 외부 문의에 그대로 쓸 수 있다.
+    /// Spec §9 forbids showing the raw term **alone**, not showing it at all.
+    /// Next to the plain sentence it stays usable for searching Apple's docs or asking elsewhere.
     var appleTerm: String? {
         let inner = rawEvidence["internalBuildState"]
         let outer = rawEvidence["externalBuildState"]
@@ -110,7 +110,7 @@ struct AppStateDefinition: Sendable, Equatable {
         }
     }
 
-    /// 전이 판정용 지문. 상태 ID만으로는 같은 칸 안의 원인 변화를 놓친다.
+    /// Fingerprint for transition detection. The state ID alone misses a change of cause.
     var fingerprint: String {
         [id.rawValue, reason ?? "-", rawEvidence["buildID"] ?? "-"].joined(separator: "|")
     }
@@ -120,10 +120,10 @@ struct AppStateDefinition: Sendable, Equatable {
     }
 }
 
-// MARK: - 상태 사전
+// MARK: - State dictionary
 
 extension AppStateDefinition {
-    /// 근거를 받아 상태 정의를 만든다. 문구는 여기 한 곳에만 존재한다.
+    /// Builds a state definition from evidence. Every user-facing string lives here and nowhere else.
     static func make(_ id: AppStateID, evidence: [String: String] = [:],
                      reason: String? = nil, detail: String? = nil) -> AppStateDefinition
     {
@@ -138,75 +138,75 @@ extension AppStateDefinition {
         switch id {
         case .noBuild:
             return .init(id: id, reason: nil, severity: .idle,
-                         headline: "업로드된 빌드 없음",
-                         description: "App Store Connect에 앱 레코드만 있고 빌드를 보낸 적이 없습니다.",
+                         headline: String(localized: "No build uploaded"),
+                         description: String(localized: "There is an App Store Connect record but no build has ever been sent."),
                          blocker: nil, nextAction: .openInAppStoreConnect,
                          notificationPolicy: .silent, rawEvidence: evidence)
 
         case .buildProcessing:
             return .init(id: id, reason: nil, severity: .info,
-                         headline: "Apple 처리 중",
+                         headline: String(localized: "Apple is processing"),
                          description: detail
-                            ?? "업로드는 완료됐습니다. 처리가 끝나면 테스트할 수 있으며 지금 할 일은 없습니다.",
+                            ?? String(localized: "The upload finished. Once processing completes you can test it. Nothing to do right now."),
                          blocker: nil, nextAction: nil,
                          notificationPolicy: .notifyWhenLeaving, rawEvidence: evidence)
 
         case .buildInvalid:
             return .init(id: id, reason: nil, severity: .warning,
-                         headline: "빌드 거부됨",
-                         description: detail ?? "Apple이 이 빌드를 거부했습니다. 새 빌드를 올려야 합니다.",
-                         blocker: "Apple이 이 빌드를 거부했습니다.",
+                         headline: String(localized: "Build rejected"),
+                         description: detail ?? String(localized: "Apple rejected this build. You'll need to upload a new one."),
+                         blocker: String(localized: "Apple rejected this build."),
                          nextAction: .openInAppStoreConnect,
                          notificationPolicy: .notifyWhenEntering, rawEvidence: evidence)
 
         case .buildReadyNotDistributed:
             return .init(id: id, reason: nil, severity: .warning,
-                         headline: "배포 대상 없음",
-                         description: "빌드는 정상이지만 연결된 테스터가 없습니다. 이 상태로는 어떤 기기에도 나타나지 않습니다.",
-                         blocker: detail ?? "테스트 대상이 연결되어 있지 않습니다.",
+                         headline: String(localized: "Reaches nobody"),
+                         description: String(localized: "The build is fine but no tester is connected to it. In this state it appears on no device."),
+                         blocker: detail ?? String(localized: "No test audience is connected."),
                          nextAction: .assignBuildToGroup,
                          notificationPolicy: .notifyWhenEntering, rawEvidence: evidence)
 
         case .internalTestingReady:
             return .init(id: id, reason: nil, severity: .success,
-                         headline: "테스트 가능",
-                         description: "아이폰 TestFlight 앱에서 바로 설치할 수 있습니다.",
+                         headline: String(localized: "Ready to test"),
+                         description: String(localized: "You can install it from TestFlight on your iPhone right now."),
                          blocker: nil, nextAction: nil,
                          notificationPolicy: .silent, rawEvidence: evidence)
 
         case .externalReviewRequired:
             return .init(id: id, reason: nil, severity: .info,
-                         headline: "내부 테스트 가능",
-                         description: "내 기기에서는 설치할 수 있습니다. 외부 테스터에게 보내려면 Apple 심사를 한 번 거쳐야 합니다.",
+                         headline: String(localized: "Internal testing only"),
+                         description: String(localized: "You can install it yourself. Sending it to external testers takes one Apple review."),
                          blocker: nil, nextAction: .openInAppStoreConnect,
                          notificationPolicy: .silent, rawEvidence: evidence)
 
         case .externalReviewPending:
             return .init(id: id, reason: nil, severity: .info,
-                         headline: "외부 심사 중",
-                         description: "심사가 끝나면 외부 테스터에게 배포됩니다. 보통 하루 안에 끝나며 지금 할 일은 없습니다.",
+                         headline: String(localized: "In external beta review"),
+                         description: String(localized: "External testers get it once review finishes, usually within a day. Nothing to do right now."),
                          blocker: nil, nextAction: nil,
                          notificationPolicy: .notifyWhenLeaving, rawEvidence: evidence)
 
         case .externalTestingReady:
             return .init(id: id, reason: nil, severity: .success,
-                         headline: "내부·외부 테스트 가능",
-                         description: "내부 테스터와 초대한 외부 테스터 모두 설치할 수 있습니다.",
+                         headline: String(localized: "Internal and external testing"),
+                         description: String(localized: "Internal testers and the external testers you invited can all install it."),
                          blocker: nil, nextAction: nil,
                          notificationPolicy: .silent, rawEvidence: evidence)
 
         case .actionRequired:
             return .init(id: id, reason: nil, severity: .warning,
-                         headline: "조치 필요",
-                         description: detail ?? "진행을 막고 있는 항목이 있습니다.",
+                         headline: String(localized: "Needs attention"),
+                         description: detail ?? String(localized: "Something is blocking progress."),
                          blocker: detail, nextAction: .openInAppStoreConnect,
                          notificationPolicy: .notifyWhenEntering, rawEvidence: evidence)
 
         case .unknown:
-            // 명세 §29 — 추측하지 않는다. 원본을 그대로 보여주고 Apple로 넘긴다.
+            // Spec §29 — never guess. Show the raw payload and hand off to Apple.
             return .init(id: id, reason: nil, severity: .warning,
-                         headline: "상태 판별 불가",
-                         description: "Apple이 예상하지 못한 값을 반환했습니다. 아래 원본을 확인하거나 App Store Connect에서 직접 보십시오.",
+                         headline: String(localized: "Could not determine state"),
+                         description: String(localized: "Apple returned a value BetaCue doesn't recognize. Check the raw payload below or look in App Store Connect."),
                          blocker: nil, nextAction: .openInAppStoreConnect,
                          notificationPolicy: .notifyWhenEntering, rawEvidence: evidence)
         }

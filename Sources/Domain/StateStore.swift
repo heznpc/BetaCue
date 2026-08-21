@@ -3,11 +3,11 @@ import SQLite3
 
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
-/// 로컬 상태 영속화. (명세 §20, §21)
+/// Local state persistence. (spec §20, §21)
 ///
-/// 두 가지 일을 한다.
-///   1. 마지막 스냅샷을 저장해 앱을 열자마자 보여준다 — 네트워크를 기다리지 않는다. (UC-01 ①)
-///   2. 상태 전이를 기록해 알림 여부를 판정하고 나중에 "처리에 얼마나 걸렸나"를 답한다.
+/// Two jobs:
+///   1. Keep the last snapshot so opening the app shows something before the network answers. (UC-01 ①)
+///   2. Record transitions to decide notifications and to answer "how long did processing take?".
 final class StateStore: @unchecked Sendable {
     private var db: OpaquePointer?
     private let queue = DispatchQueue(label: "app.betacue.statestore")
@@ -53,15 +53,15 @@ final class StateStore: @unchecked Sendable {
         );
         """)
 
-        // CREATE TABLE IF NOT EXISTS는 이미 있는 테이블에 컬럼을 더해주지 않는다.
-        // 이걸 빠뜨리면 스키마가 바뀐 뒤 INSERT가 prepare 단계에서 조용히 실패하고,
-        // 전이가 기록되지 않아 알림이 통째로 멎는다. 실제로 한 번 그렇게 됐다.
+        // CREATE TABLE IF NOT EXISTS does not add columns to a table that already exists.
+        // Skip this and, after a schema change, INSERT fails silently at prepare time,
+        // no transition is recorded, and notifications stop entirely. That happened once.
         addColumnIfMissing(table: "state_transitions",
                            column: "fingerprint",
                            definition: "TEXT NOT NULL DEFAULT ''")
     }
 
-    /// 이미 있으면 아무것도 하지 않는다. 없으면 ALTER TABLE로 더한다.
+    /// No-op when the column exists; otherwise adds it with ALTER TABLE.
     private func addColumnIfMissing(table: String, column: String, definition: String) {
         guard !columnExists(table: table, column: column) else { return }
         exec("ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
@@ -86,7 +86,7 @@ final class StateStore: @unchecked Sendable {
         queue.sync { sqlite3_exec(db, sql, nil, nil, nil) }
     }
 
-    // MARK: - 스냅샷
+    // MARK: - Snapshots
 
     func saveSnapshots(_ snapshots: [AppSnapshot]) {
         let encoder = JSONEncoder()
@@ -136,16 +136,16 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - 전이
+    // MARK: - Transitions
 
     struct LastState: Sendable {
         var state: AppStateID
         var fingerprint: String
     }
 
-    /// 직전 상태와 지문. 처음 보는 앱이면 nil — 최초 조회에서 알림이 쏟아지지 않게 한다.
+    /// Previous state and fingerprint. nil for an app never seen, so the first fetch stays quiet.
     ///
-    /// 지문까지 비교해야 `ACTION_REQUIRED` 안에서 원인만 바뀐 변화를 놓치지 않는다.
+    /// Comparing fingerprints is what catches a cause change inside `ACTION_REQUIRED`.
     func lastFingerprint(appID: String) -> LastState? {
         queue.sync {
             var stmt: OpaquePointer?
@@ -221,9 +221,9 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - 피드백 카운트
+    // MARK: - Feedback counts
 
-    /// 이전에 본 개수를 돌려주고 새 값을 저장한다. 증가분만 알림 대상이다.
+    /// Returns the previously seen count and stores the new one. Only the increase notifies.
     func exchangeFeedbackCount(appID: String, kind: String, newCount: Int) -> Int? {
         queue.sync {
             var previous: Int?

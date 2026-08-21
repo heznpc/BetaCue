@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 홈. 앱 하나당 정체·현재 상태·막힌 이유·다음 할 일·마지막 확인이 반드시 있다. (명세 §13)
+/// Home. Every app shows identity, current state, blocker, next action and last check. (spec §13)
 struct HomeView: View {
     @Bindable var store: Store
     @State private var selection: AppSnapshot.ID?
@@ -12,7 +12,7 @@ struct HomeView: View {
             if let selection, let app = store.apps.first(where: { $0.id == selection }) {
                 AppDetailView(app: app, store: store)
             } else {
-                ContentUnavailableView("앱을 선택하세요", systemImage: "sidebar.left")
+                ContentUnavailableView(String(localized: "Select an app"), systemImage: "sidebar.left")
             }
         }
         .navigationTitle("BetaCue")
@@ -21,7 +21,7 @@ struct HomeView: View {
                 Button {
                     store.refresh()
                 } label: {
-                    Label("새로고침", systemImage: "arrow.clockwise")
+                    Label(String(localized: "Refresh"), systemImage: "arrow.clockwise")
                 }
                 .disabled(store.isRefreshing)
             }
@@ -45,13 +45,13 @@ struct HomeView: View {
 
     @ViewBuilder
     private var statusBar: some View {
-        // 알림이 막혀 있으면 이 앱의 절반이 동작하지 않는다. 조용히 두면 안 된다.
+        // With notifications blocked, half of this app does nothing. Do not stay quiet about it.
         if store.notificationPermission.isBlocking {
             HStack(spacing: 7) {
                 Image(systemName: "bell.slash.fill").foregroundStyle(.orange)
-                Text("알림이 꺼져 있어 상태 변화를 알려드릴 수 없습니다")
+                Text(String(localized: "Notifications are off, so state changes can't be announced"))
                 Spacer()
-                Button("설정 열기") {
+                Button(String(localized: "Open Settings")) {
                     if let url = Notifier.settingsURL { NSWorkspace.shared.open(url) }
                 }
                 .buttonStyle(.link)
@@ -66,12 +66,12 @@ struct HomeView: View {
             HStack(spacing: 8) {
                 if store.isRefreshing {
                     ProgressView().controlSize(.small)
-                    Text("확인 중…")
+                    Text(String(localized: "Checking…"))
                 } else if let error = store.errorMessage {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                     Text(error).lineLimit(1)
                 } else {
-                    Text("마지막 확인: \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))")
+                    Text(String(localized: "Last checked \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))"))
                 }
                 Spacer()
             }
@@ -84,7 +84,7 @@ struct HomeView: View {
     }
 }
 
-/// 목록의 한 줄. Apple 용어를 쓰지 않는다.
+/// One row of the list. No Apple vocabulary here.
 private struct AppRow: View {
     let app: AppSnapshot
     let store: Store
@@ -101,7 +101,7 @@ private struct AppRow: View {
                     Image(systemName: "wifi.exclamationmark")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .help("일부 정보를 읽지 못했습니다")
+                        .help(String(localized: "Some information couldn't be read"))
                 }
                 Spacer()
                 if let build = app.latestBuild {
@@ -115,9 +115,9 @@ private struct AppRow: View {
                 .font(.subheadline)
                 .foregroundStyle(state.severity == .warning ? state.severity.tint : .primary)
 
-            // 최신 빌드가 아직 못 나갔어도 이전 빌드가 살아 있으면 그 사실을 잃지 않는다.
+            // Even when the newest build is stuck, say so if an older one is still serving.
             if status.hasOlderTestableBuild, let alive = status.testable {
-                Label("\(alive.displayVersion)은(는) 계속 테스트 가능", systemImage: "checkmark.circle")
+                Label(String(localized: "\(alive.displayVersion) is still testable"), systemImage: "checkmark.circle")
                     .font(.caption)
                     .foregroundStyle(.green)
             }
@@ -138,16 +138,16 @@ private struct AppRow: View {
     }
 }
 
-/// 다음 행동 버튼. v0에서는 두 가지뿐이다. (명세 §26)
+/// The next-action button. v0 has two. (spec §26)
 ///
-/// 레이블은 실제로 하는 일과 일치해야 한다. 앱 안에서 배포할 수 없는 상황이면
-/// "배포"라고 쓰지 않고 App Store Connect로 넘긴다고 말한다.
+/// The label has to match what actually happens. When in-app distribution is impossible,
+/// it says it hands off to App Store Connect rather than claiming to distribute.
 struct ActionButton: View {
     let action: NextAction
     let app: AppSnapshot
     let store: Store
 
-    /// 앱 안에서 바로 배포할 수 있는가 — 붙일 빌드와 받을 그룹이 둘 다 있어야 한다.
+    /// Can this be distributed from here? Needs both a build to attach and a group that reaches someone.
     private var inAppDistribution: (build: BuildSnapshot, groups: [GroupSnapshot])? {
         guard action == .assignBuildToGroup,
               let build = app.latestBuild, build.isValid
@@ -170,10 +170,10 @@ struct ActionButton: View {
 
     private var title: String {
         guard action == .assignBuildToGroup else { return action.title }
-        guard let target = inAppDistribution else { return "App Store Connect에서 배포" }
+        guard let target = inAppDistribution else { return String(localized: "Distribute in App Store Connect") }
         return target.groups.count == 1
-            ? "\(target.groups[0].name)에 배포"
-            : "테스터에게 배포"
+            ? String(localized: "Distribute to \(target.groups[0].name)")
+            : String(localized: "Distribute to testers")
     }
 
     private var symbol: String {
@@ -202,15 +202,39 @@ extension Severity {
 }
 
 enum RelativeTime {
-    static func string(_ date: Date?, relativeTo now: Date = Date()) -> String {
-        guard let date else { return "아직 없음" }
+    /// The bucket a timestamp falls into.
+    ///
+    /// Split out from the string so tests can assert the logic without depending on
+    /// which language the process happens to be running in.
+    enum Bucket: Equatable, Sendable {
+        case never
+        case justNow
+        case seconds(Int)
+        case minutes(Int)
+        case hours(Int)
+        case days(Int)
+    }
+
+    static func bucket(_ date: Date?, relativeTo now: Date = Date()) -> Bucket {
+        guard let date else { return .never }
         let seconds = Int(now.timeIntervalSince(date))
         switch seconds {
-        case ..<10:     return "방금"
-        case ..<60:     return "\(seconds)초 전"
-        case ..<3600:   return "\(seconds / 60)분 전"
-        case ..<86_400: return "\(seconds / 3600)시간 전"
-        default:        return "\(seconds / 86_400)일 전"
+        case ..<10:     return .justNow
+        case ..<60:     return .seconds(seconds)
+        case ..<3600:   return .minutes(seconds / 60)
+        case ..<86_400: return .hours(seconds / 3600)
+        default:        return .days(seconds / 86_400)
+        }
+    }
+
+    static func string(_ date: Date?, relativeTo now: Date = Date()) -> String {
+        switch bucket(date, relativeTo: now) {
+        case .never:            return String(localized: "never")
+        case .justNow:          return String(localized: "just now")
+        case .seconds(let n):   return String(localized: "\(n)s ago")
+        case .minutes(let n):   return String(localized: "\(n)m ago")
+        case .hours(let n):     return String(localized: "\(n)h ago")
+        case .days(let n):      return String(localized: "\(n)d ago")
         }
     }
 }

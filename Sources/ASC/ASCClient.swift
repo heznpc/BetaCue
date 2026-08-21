@@ -11,22 +11,22 @@ enum ASCError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .notConfigured:
-            return "App Store Connect 키가 아직 설정되지 않았습니다."
+            return String(localized: "App Store Connect key is not configured yet.")
         case .keyFileUnreadable(let path):
-            return "키 파일을 읽지 못했습니다: \(path)"
+            return String(localized: "Couldn't read the key file: \(path)")
         case .badPrivateKey:
-            return "키 파일이 올바른 형식이 아닙니다. Apple에서 받은 .p8 파일이 맞는지 확인하세요."
+            return String(localized: "That key file isn't in the expected format. Check that it's the .p8 Apple gave you.")
         case .http(let status, let title, let detail):
-            return detail.isEmpty ? "\(title) (HTTP \(status))" : detail
+            return detail.isEmpty ? String(localized: "\(title) (HTTP \(status))") : detail
         case .transport(let message):
             return message
         }
     }
 }
 
-/// App Store Connect REST 클라이언트.
+/// App Store Connect REST client.
 ///
-/// 토큰은 20분 만료로 발급하고 5분 여유를 두고 재발급한다. Apple 상한은 20분이다.
+/// Tokens are minted with a 20-minute expiry and renewed 5 minutes early. Apple's ceiling is 20 minutes.
 actor ASCClient {
     private let credentials: ASCCredentials
     private let session: URLSession
@@ -41,7 +41,7 @@ actor ASCClient {
         self.session = session
     }
 
-    // MARK: - 토큰
+    // MARK: - Token
 
     private func token() throws -> String {
         if let cached = cachedToken, cached.expiry.timeIntervalSinceNow > Self.renewMargin {
@@ -70,7 +70,7 @@ actor ASCClient {
         } catch {
             throw ASCError.badPrivateKey
         }
-        // JWT ES256은 DER이 아니라 r‖s 원시 64바이트를 요구한다.
+        // ES256 JWTs want the raw 64-byte r‖s pair, not a DER signature.
         let signature = try key.signature(for: Data(signingInput.utf8))
         return signingInput + "." + Self.base64URL(signature.rawRepresentation)
     }
@@ -87,22 +87,22 @@ actor ASCClient {
             .replacingOccurrences(of: "=", with: "")
     }
 
-    // MARK: - 요청
+    // MARK: - Requests
 
     func get<T: Decodable>(_ path: String, as type: T.Type = T.self) async throws -> T {
         let data = try await send(path: path, method: "GET", body: nil)
         do {
             return try JSONDecoder.asc.decode(T.self, from: data)
         } catch {
-            throw ASCError.transport("응답을 해석하지 못했습니다: \(error.localizedDescription)")
+            throw ASCError.transport(String(localized: "Couldn't parse the response: \(error.localizedDescription)"))
         }
     }
 
-    /// `links.next`를 따라가며 전부 모은다.
+    /// Follows `links.next` until everything is collected.
     ///
-    /// Apple은 한 페이지에 최대 200개만 준다. 잘린 걸 모르고 쓰면 테스터 수가
-    /// 실제보다 적게 나오고, 그 숫자로 "받을 사람이 없다"는 판정을 내리게 된다.
-    /// 폭주를 막기 위해 페이지 수에 상한을 둔다.
+    /// Apple caps a page at 200. Using a truncated count silently undercounts testers,
+    /// and that number is what decides "this build reaches nobody".
+    /// A page ceiling keeps a runaway response from looping forever.
     func getAllPages<T: Decodable & Sendable>(
         _ path: String, as type: T.Type = T.self, maxPages: Int = 20
     ) async throws -> [ASCResource<T>] where T: Sendable {
@@ -119,7 +119,7 @@ actor ASCClient {
         return collected
     }
 
-    /// 관계 목록의 전 페이지.
+    /// Every page of a relationship listing.
     func getAllRelationshipIDs(_ path: String, maxPages: Int = 20) async throws -> [String] {
         var collected: [String] = []
         var next: String? = path
@@ -134,7 +134,7 @@ actor ASCClient {
         return collected
     }
 
-    /// 실패해도 전체를 무너뜨리면 안 되는 부수 조회용. 오류는 nil로 접는다.
+    /// For secondary fetches that must not take the whole refresh down. Errors collapse to nil.
     func getOrNil<T: Decodable>(_ path: String, as type: T.Type = T.self) async -> T? {
         try? await get(path, as: type)
     }
@@ -145,9 +145,9 @@ actor ASCClient {
         return try JSONDecoder.asc.decode(T.self, from: data)
     }
 
-    /// 관계 생성처럼 성공 시 204 No Content를 주는 요청.
+    /// For requests that answer 204 No Content on success, such as creating a relationship.
     ///
-    /// 제네릭 `post`로 부르면 본문이 비어 있어 디코딩에서 실패한다 — 성공했는데 실패로 보인다.
+    /// The generic `post` would fail decoding an empty body and report success as failure.
     func postNoContent(_ path: String, body: Encodable) async throws {
         let encoded = try JSONEncoder().encode(AnyEncodable(body))
         _ = try await send(path: path, method: "POST", body: encoded)
@@ -163,12 +163,12 @@ actor ASCClient {
     }
 
     private func send(path: String, method: String, body: Data?) async throws -> Data {
-        // links.next는 절대 URL로 온다. 상대 경로와 둘 다 받는다.
+        // links.next arrives as an absolute URL, so accept both absolute and relative paths.
         let resolved = path.hasPrefix("http")
             ? URL(string: path)
             : URL(string: path, relativeTo: Self.base)
         guard let url = resolved else {
-            throw ASCError.transport("잘못된 경로: \(path)")
+            throw ASCError.transport(String(localized: "Invalid path: \(path)"))
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -182,7 +182,7 @@ actor ASCClient {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            throw ASCError.transport("App Store Connect에 연결하지 못했습니다: \(error.localizedDescription)")
+            throw ASCError.transport(String(localized: "Couldn't reach App Store Connect: \(error.localizedDescription)"))
         }
 
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
@@ -190,7 +190,7 @@ actor ASCClient {
             let parsed = try? JSONDecoder().decode(ASCErrorResponse.self, from: data)
             let first = parsed?.errors.first
             throw ASCError.http(status: status,
-                                title: first?.title ?? "요청이 거부되었습니다",
+                                title: first?.title ?? String(localized: "The request was refused"),
                                 detail: first?.detail ?? "")
         }
         return data
@@ -205,7 +205,7 @@ private struct ASCErrorResponse: Decodable {
     var errors: [Item]
 }
 
-/// `Encodable` 존재 타입을 인코딩하기 위한 얇은 래퍼.
+/// Thin wrapper so an existential `Encodable` can be encoded.
 private struct AnyEncodable: Encodable {
     private let encodeTo: (Encoder) throws -> Void
     init(_ wrapped: Encodable) { encodeTo = wrapped.encode(to:) }

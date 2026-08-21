@@ -1,18 +1,18 @@
 import Foundation
 
-// MARK: - JSON:API 봉투
+// MARK: - JSON:API envelopes
 
 struct ASCList<Attributes: Decodable & Sendable>: Decodable, Sendable {
     var data: [ASCResource<Attributes>]
     var meta: ASCMeta?
     var links: ASCLinks?
 
-    /// 서버가 아는 전체 개수. limit에 걸려 잘렸는지 판단할 때 쓴다.
+    /// Total the server knows about. Used to tell whether `limit` truncated the page.
     var total: Int { meta?.paging.total ?? data.count }
     var isTruncated: Bool { total > data.count }
 }
 
-/// 관계 엔드포인트는 속성 없이 `{type, id}`만 준다.
+/// Relationship endpoints return `{type, id}` only, with no attributes.
 struct ASCRelationshipList: Decodable, Sendable {
     struct Ref: Decodable, Sendable { var id: String }
     var data: [Ref]
@@ -23,7 +23,7 @@ struct ASCRelationshipList: Decodable, Sendable {
     var total: Int { meta?.paging.total ?? data.count }
 }
 
-/// 다음 페이지 주소. 있으면 아직 안 읽은 항목이 남아 있다는 뜻이다.
+/// Address of the next page. Its presence means unread items remain.
 struct ASCLinks: Decodable, Sendable {
     var next: String?
 }
@@ -36,7 +36,7 @@ struct ASCMeta: Decodable, Sendable {
     var paging: Paging
 }
 
-/// 단일 리소스. 관계가 비어 있으면 Apple이 `data: null`을 준다.
+/// A single resource. Apple sends `data: null` when the relationship is empty.
 struct ASCSingle<Attributes: Decodable & Sendable>: Decodable, Sendable {
     var data: ASCResource<Attributes>?
 }
@@ -46,7 +46,7 @@ struct ASCResource<Attributes: Decodable & Sendable>: Decodable, Sendable, Ident
     var attributes: Attributes
 }
 
-// MARK: - 속성
+// MARK: - Attributes
 
 struct AppAttributes: Decodable, Sendable {
     var name: String
@@ -56,7 +56,7 @@ struct AppAttributes: Decodable, Sendable {
 
 struct BuildAttributes: Decodable, Sendable {
 
-    /// Apple이 말하는 "version"은 사실 빌드 번호다. 마케팅 버전이 아니다.
+    /// What Apple calls "version" is the build number, not the marketing version.
     var version: String?
     var processingState: String?
     var uploadedDate: Date?
@@ -88,7 +88,7 @@ struct BetaTesterAttributes: Decodable, Sendable {
     var lastName: String?
     var email: String?
     var inviteType: String?
-    /// Apple이 이 필드를 거의 항상 null로 준다. 설치 여부 판단에 쓸 수 없다.
+    /// Apple returns this as null almost always. It cannot be used to tell who installed.
     var state: String?
 }
 
@@ -122,13 +122,13 @@ struct FeedbackCrashAttributes: Decodable, Sendable {
     var osVersion: String?
 }
 
-// MARK: - 디코딩
+// MARK: - Decoding
 
 extension JSONDecoder {
-    /// Apple은 ISO8601을 소수점 초가 있는 형태와 없는 형태를 섞어서 준다.
+    /// Apple mixes ISO8601 with and without fractional seconds.
     ///
-    /// `ISO8601DateFormatter`는 클래스라 Sendable이 아니어서 `@Sendable` 디코딩 클로저에
-    /// 캡처할 수 없다. 값 타입인 `Date.ISO8601FormatStyle`을 쓴다.
+    /// `ISO8601DateFormatter` is a class and therefore not Sendable, so it cannot be captured
+    /// in the `@Sendable` decoding closure. `Date.ISO8601FormatStyle` is a value type.
     static let asc: JSONDecoder = {
         let decoder = JSONDecoder()
         let withFraction = Date.ISO8601FormatStyle(includingFractionalSeconds: true)
@@ -139,7 +139,7 @@ extension JSONDecoder {
             if let date = try? withFraction.parse(raw) { return date }
             if let date = try? plain.parse(raw) { return date }
             throw DecodingError.dataCorrupted(
-                .init(codingPath: decoder.codingPath, debugDescription: "날짜 형식을 알 수 없음: \(raw)"))
+                .init(codingPath: decoder.codingPath, debugDescription: String(localized: "unrecognized date format: \(raw)")))
         }
         return decoder
     }()

@@ -1,10 +1,10 @@
 import Foundation
 import UserNotifications
 
-/// 알림 전송.
+/// Notification delivery.
 ///
-/// 권한이 거부되면 이 앱의 핵심 기능이 통째로 죽는다 — 그런데 아무 표시도 없이 죽는다.
-/// 그래서 권한 상태를 밖에서 읽을 수 있게 두고 화면에서 알린다.
+/// A denied permission kills half of what this app is for — and kills it with no visible sign.
+/// So the permission state is readable from outside and surfaced in the UI.
 enum Notifier {
     enum Permission: Sendable {
         case unknown
@@ -43,7 +43,7 @@ enum Notifier {
         UNUserNotificationCenter.current().add(request) { _ in }
     }
 
-    /// 시스템 설정의 이 앱 알림 상세 화면을 연다. 거부된 권한은 앱에서 되돌릴 수 없다.
+    /// Opens this app's notification pane in System Settings. A denial cannot be undone in-app.
     static var settingsURL: URL? {
         guard let bundleIdentifier = Bundle.main.bundleIdentifier else { return nil }
         return settingsURL(for: bundleIdentifier)
