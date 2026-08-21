@@ -66,6 +66,21 @@ final class StoreTests: XCTestCase {
         ]
     }
 
+    private func appListCallCount() -> Int {
+        MockURLProtocol.requests.filter { $0.url?.path.hasSuffix("/v1/apps") ?? false }.count
+    }
+
+    /// Waits until nothing is in flight any more, follow-ups included.
+    private func settle(_ store: Store) async {
+        var quiet = 0
+        for _ in 0..<400 {
+            try? await Task.sleep(for: .milliseconds(20))
+            quiet = store.isRefreshing || store.runningCommand != nil ? 0 : quiet + 1
+            if quiet >= 3 { return }
+        }
+        XCTFail("the store never settled")
+    }
+
     /// Waits for a *new* refresh to land, not merely for one to have happened before.
     private func refreshAndWait(_ store: Store) async {
         let before = store.lastRefresh
@@ -89,23 +104,83 @@ final class StoreTests: XCTestCase {
         XCTAssertNil(store.errorMessage)
     }
 
-    /// A manual refresh landing while polling is mid-flight must not run a second pass.
-    func testRefreshIsSingleFlight() async {
+    /// P1-5. Requests arriving during a refresh used to be dropped, which is how a refresh
+    /// asked for right after distributing a build could vanish and leave the old attachment
+    /// on screen. They are queued instead — and collapsed, so a burst is one follow-up and
+    /// not a treadmill.
+    func testConcurrentRequestsCollapseIntoOneFollowUp() async {
         MockURLProtocol.respond(table())
         let store = makeStore()
 
         store.refresh()
         store.refresh()
         store.refresh()
-        for _ in 0..<300 {
-            try? await Task.sleep(for: .milliseconds(20))
-            if !store.isRefreshing && store.lastRefresh != nil { break }
+        await settle(store)
+
+        XCTAssertEqual(appListCallCount(), 2,
+                       "the running pass, plus exactly one pass for everything asked after it")
+    }
+
+    /// A single request while nothing is running is still a single pass.
+    func testOneRequestIsOnePass() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore()
+        await refreshAndWait(store)
+        XCTAssertEqual(appListCallCount(), 1)
+    }
+
+    /// P1-5. Distributing has to be followed by a read that started *after* the write, or the
+    /// screen keeps showing the attachment the build had before the button was pressed.
+    func testDistributingIsFollowedByAFreshRead() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore(dbName: "distribute.sqlite")
+        await refreshAndWait(store)
+
+        let app = store.apps.first!
+        store.distribute(build: app.builds.first!, of: app, to: app.groups)
+        await settle(store)
+
+        let paths = MockURLProtocol.requests.map {
+            ($0.httpMethod ?? "GET") + " " + ($0.url?.path ?? "")
+        }
+        let write = paths.lastIndex { $0.hasPrefix("POST") }
+        let read = paths.lastIndex { $0 == "GET /v1/apps" }
+        XCTAssertNotNil(write, "the write itself has to happen: \(paths)")
+        XCTAssertNotNil(read)
+        XCTAssertGreaterThan(read ?? -1, write ?? .max,
+                             "the refresh has to start after the write, not race it")
+    }
+
+    /// P1-5. A key swapped mid-flight leaves an answer in the air that describes the previous
+    /// account. Landing it would show one account's apps under another's credentials.
+    func testResultsReadWithAReplacedKeyNeverLand() async {
+        let gate = RequestGate()
+        let responses = table(apps: ["belongs-to-the-old-key"])
+        MockURLProtocol.handler = { request in
+            let path = request.url.map { $0.path + ($0.query.map { "?\($0)" } ?? "") } ?? ""
+            if path.hasPrefix("/v1/apps") { gate.waitUntilOpen() }
+            for (key, response) in responses.sorted(by: { $0.key.count > $1.key.count })
+            where path.contains(key) { return response }
+            return .init(status: 404)
         }
 
-        let appListCalls = MockURLProtocol.requests
-            .filter { $0.url?.path.hasSuffix("/v1/apps") ?? false }
-        XCTAssertEqual(appListCalls.count, 1,
-                       "@MainActor is not a mutex across suspension points")
+        let store = makeStore(dbName: "generation.sqlite")
+        store.refresh()
+        for _ in 0..<200 {
+            try? await Task.sleep(for: .milliseconds(10))
+            if store.isRefreshing { break }
+        }
+        XCTAssertTrue(store.isRefreshing, "the fetch has to be genuinely in flight")
+
+        var replacement = config!
+        replacement.keyID = "OTHERKEY456"
+        store.config = replacement
+        gate.open()
+        await settle(store)
+
+        XCTAssertTrue(store.apps.isEmpty,
+                      "got: \(store.apps.map(\.id)) — read with a key that is no longer set")
+        XCTAssertNil(store.lastRefresh, "and it did not count as a successful check either")
     }
 
     /// Certificates are secondary; their failure must not mark a good app refresh as failed.

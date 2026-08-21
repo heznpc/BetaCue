@@ -82,6 +82,30 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// Holds a request open until the test lets it go.
+///
+/// Some of what Store has to get right is about *timing* — a key swapped while a fetch is in
+/// flight, a refresh asked for while another is running. Without a way to stop a request
+/// mid-air those races can only be hoped at. Once opened it stays open, so retries do not
+/// deadlock against a one-shot signal.
+final class RequestGate: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var isOpen = false
+
+    func waitUntilOpen() {
+        condition.lock()
+        defer { condition.unlock() }
+        while !isOpen { condition.wait() }
+    }
+
+    func open() {
+        condition.lock()
+        isOpen = true
+        condition.broadcast()
+        condition.unlock()
+    }
+}
+
 /// Records notification decisions instead of showing banners.
 final class FakeNotifier: NotificationSending, @unchecked Sendable {
     struct Sent: Equatable {

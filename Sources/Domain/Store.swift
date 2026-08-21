@@ -28,7 +28,15 @@ final class Store {
     var lastNotificationFailure: String? { Notifier.lastDeliveryFailure }
 
     var config: BetaCueConfig {
-        didSet { client = makeClient() }
+        didSet {
+            configGeneration &+= 1
+            client = makeClient()
+            // Whatever is already in flight was read with the previous key. Its results
+            // describe a different account, and landing them would show one account's apps
+            // under another's credentials.
+            refreshTask?.cancel()
+            followUpRequested = false
+        }
     }
 
     private var client: ASCClient?
@@ -38,6 +46,11 @@ final class Store {
     private let retryDelayScale: Double
     private var refreshTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
+    /// A request that arrived while a refresh was already running.
+    private var followUpRequested = false
+    /// Bumped whenever the credentials change, so results can be matched to the key that
+    /// asked for them.
+    private var configGeneration = 0
 
     /// States whose transition the database refused to take.
     ///
@@ -112,7 +125,7 @@ final class Store {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
-                await self?.refreshNow()
+                if let task = self?.requestRefresh() { await task.value }
                 guard let interval = self?.pollInterval else { return }
                 try? await Task.sleep(for: .seconds(interval))
             }
@@ -120,18 +133,41 @@ final class Store {
     }
 
     /// Manual refresh. (spec §22, last line)
-    func refresh() {
-        guard refreshTask == nil else { return }
-        refreshTask = Task { [weak self] in
-            await self?.refreshNow()
+    func refresh() { requestRefresh() }
+
+    /// Starts a refresh, or queues one behind the pass already running.
+    ///
+    /// Dropping the request was wrong in a way that showed: a refresh asked for right after a
+    /// build was distributed would be discarded if polling happened to be mid-flight, leaving
+    /// the old attachment on screen with nothing to indicate it was stale. A pass that is
+    /// already reading App Store Connect cannot be assumed to have seen a change made after it
+    /// started, so the answer is one more pass rather than joining that one. Repeated requests
+    /// collapse into a single follow-up, so this cannot become a treadmill.
+    @discardableResult
+    private func requestRefresh() -> Task<Void, Never> {
+        if let running = refreshTask {
+            followUpRequested = true
+            return running
+        }
+        let task = Task { [weak self] in
+            repeat {
+                await self?.performRefresh()
+            } while !Task.isCancelled && self?.consumeFollowUp() == true
             self?.refreshTask = nil
         }
+        refreshTask = task
+        return task
     }
 
-    private func refreshNow() async {
-        // Polling calls this directly while a manual refresh may be in flight. @MainActor is not
-        // a mutex across suspension points, so guard explicitly.
-        guard !isRefreshing else { return }
+    private func consumeFollowUp() -> Bool {
+        defer { followUpRequested = false }
+        return followUpRequested
+    }
+
+    private func performRefresh() async {
+        // The credentials can be swapped while this runs. Everything below describes the key
+        // held at this moment, and nothing may be committed under a different one.
+        let generation = configGeneration
         guard let client else {
             errorMessage = ASCError.notConfigured.localizedDescription
             return
@@ -171,6 +207,7 @@ final class Store {
             }
             collected = Self.sorted(collected)
 
+            guard generation == configGeneration else { return }
             detectAndNotify(collected)
             persistence.saveSnapshots(collected,
                                       appListWasComplete: failedNames.isEmpty && appPage.isComplete)
@@ -184,14 +221,17 @@ final class Store {
             // Certificates are secondary. Their failure must not make a successful app refresh
             // look like a failed one.
             do {
-                certificates = try await Collector.loadCertificates(using: client)
+                let loaded = try await Collector.loadCertificates(using: client)
+                guard generation == configGeneration else { return }
+                certificates = loaded
                 notifyExpiringCertificates()
             } catch {
-                if errorMessage == nil {
+                if errorMessage == nil, generation == configGeneration {
                     errorMessage = String(localized: "Couldn't read certificates.")
                 }
             }
         } catch {
+            guard generation == configGeneration else { return }
             errorMessage = (error as? ASCError)?.localizedDescription ?? error.localizedDescription
         }
     }
@@ -330,7 +370,8 @@ final class Store {
             defer { self?.runningCommand = nil }
             do {
                 try await Commands.assign(build: build.id, toGroups: groups.map(\.id), using: client)
-                await self?.refreshNow()
+                // Not a plain refresh: this has to be a pass that started after the write.
+                if let task = self?.requestRefresh() { await task.value }
             } catch {
                 self?.errorMessage = (error as? ASCError)?.localizedDescription
                     ?? error.localizedDescription
