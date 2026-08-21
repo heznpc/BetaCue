@@ -192,6 +192,11 @@ actor ASCClient {
     private func send(path: String, method: String, body: Data?) async throws -> Data {
         var attempt = 0
         while true {
+            // Being cancelled is not a transport failure, and the two were folded together.
+            // A cancelled refresh kept retrying to the ceiling, and `try?` around the backoff
+            // swallowed the cancellation as well, so the work ran to completion and its answer
+            // came back to a caller that had already given up on it.
+            try Task.checkCancellation()
             attempt += 1
             do {
                 return try await sendOnce(path: path, method: method, body: body)
@@ -200,7 +205,8 @@ actor ASCClient {
                       let delay = Self.retryDelay(for: error, attempt: attempt)
                 else { throw error }
                 let scaled = delay * retryDelayScale
-                if scaled > 0 { try? await Task.sleep(for: .seconds(scaled)) }
+                // Not `try?`: waiting to retry is exactly when a cancellation arrives.
+                if scaled > 0 { try await Task.sleep(for: .seconds(scaled)) }
             }
         }
     }
@@ -249,6 +255,12 @@ actor ASCClient {
         let data: Data, response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch let error as URLError where error.code == .cancelled {
+            // URLSession reports a cancelled task this way. Dressed as a transport error it
+            // would be retried, and the caller would never learn it had been called off.
+            throw CancellationError()
         } catch {
             throw ASCError.transport(String(localized: "Couldn't reach App Store Connect: \(error.localizedDescription)"))
         }

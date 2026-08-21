@@ -53,6 +53,58 @@ final class ASCClientTests: XCTestCase {
         XCTAssertEqual(MockURLProtocol.requests.first?.httpMethod, "POST")
     }
 
+    // MARK: - Cancellation
+
+    /// P1-8. Cancellation used to arrive dressed as a transport error, which is a retryable
+    /// shape — so a call that had already been given up on was tried again up to the ceiling
+    /// and its answer came back to nobody.
+    func testCancellationSurfacesInsteadOfBeingRetried() async throws {
+        MockURLProtocol.responseDelay = 0.4
+        MockURLProtocol.respond(["/v1/apps": .json(Fixture.apps(["a1"]))])
+        let client = makeClient()
+
+        let call = Task { try await client.get("/v1/apps", as: ASCList<AppAttributes>.self) }
+        try await Task.sleep(for: .milliseconds(80))
+        call.cancel()
+
+        do {
+            _ = try await call.value
+            XCTFail("a cancelled call must not come back with data")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got: \(error)")
+        }
+        XCTAssertEqual(MockURLProtocol.requests.count, 1,
+                       "a cancelled request is not a transient failure to retry")
+    }
+
+    /// The backoff between retries is exactly when a cancellation tends to land, and `try?`
+    /// around the sleep swallowed it — the loop simply carried on to the next attempt.
+    func testCancellationDuringBackoffStopsTheRetryLoop() async throws {
+        MockURLProtocol.respond(["/v1/apps": .init(status: 503)])
+        // Real backoff, so there is a wait to be cancelled during.
+        let client = ASCClient(credentials: credentials, session: session, retryDelayScale: 1.0)
+
+        let call = Task { try await client.get("/v1/apps", as: ASCList<AppAttributes>.self) }
+        try await Task.sleep(for: .milliseconds(150))
+        call.cancel()
+
+        do {
+            _ = try await call.value
+            XCTFail("expected the cancellation to end the loop")
+        } catch {
+            XCTAssertTrue(error is CancellationError, "got: \(error)")
+        }
+        XCTAssertEqual(MockURLProtocol.requests.count, 1,
+                       "the second attempt was never made: \(MockURLProtocol.requests.count)")
+    }
+
+    /// A request that is never cancelled still gets its retries.
+    func testAnUncancelledCallStillRetries() async throws {
+        MockURLProtocol.respond(["/v1/apps": .init(status: 503)])
+        _ = try? await makeClient().get("/v1/apps", as: ASCList<AppAttributes>.self)
+        XCTAssertEqual(MockURLProtocol.requests.count, 4, "the ceiling is still four attempts")
+    }
+
     // MARK: - Error shapes
 
     func testDecodesAnApiErrorDetail() async throws {

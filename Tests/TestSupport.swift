@@ -6,7 +6,7 @@ import Foundation
 /// Everything BetaCue believes about the world arrives through `URLSession`, so this is the
 /// seam where failure conditions — 429, truncation, a foreign redirect target — can be
 /// reproduced exactly rather than hoped about.
-final class MockURLProtocol: URLProtocol {
+final class MockURLProtocol: URLProtocol, @unchecked Sendable {
     struct Response: Sendable {
         var status: Int
         var body: Data
@@ -26,6 +26,11 @@ final class MockURLProtocol: URLProtocol {
 
     /// Handler consulted for every request. Set it before making one.
     nonisolated(unsafe) static var handler: (@Sendable (URLRequest) -> Response)?
+    /// How long to hold a request before answering.
+    ///
+    /// Answering synchronously leaves no window in which a request can be cancelled, so
+    /// cancellation could not be reproduced here at all — which is how it went unhandled.
+    nonisolated(unsafe) static var responseDelay: TimeInterval = 0
     /// Every request that was made, in order, for asserting on what was actually sent.
     nonisolated(unsafe) private(set) static var recorded: [URLRequest] = []
     private static let lock = NSLock()
@@ -33,6 +38,7 @@ final class MockURLProtocol: URLProtocol {
     static func reset() {
         lock.withLock {
             handler = nil
+            responseDelay = 0
             recorded = []
         }
     }
@@ -64,6 +70,9 @@ final class MockURLProtocol: URLProtocol {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
+    /// Set when URLSession calls `stopLoading`, so a held request answers nobody.
+    private let stopped = Flag()
+
     override func startLoading() {
         Self.lock.withLock { Self.recorded.append(request) }
 
@@ -72,14 +81,26 @@ final class MockURLProtocol: URLProtocol {
             return
         }
         let reply = handler(request)
-        let response = HTTPURLResponse(url: url, statusCode: reply.status,
-                                       httpVersion: "HTTP/1.1", headerFields: reply.headers)!
-        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        if !reply.body.isEmpty { client?.urlProtocol(self, didLoad: reply.body) }
-        client?.urlProtocolDidFinishLoading(self)
+        let deliver: @Sendable () -> Void = { [weak self] in
+            guard let self, !self.stopped.isRaised else { return }
+            let response = HTTPURLResponse(url: url, statusCode: reply.status,
+                                           httpVersion: "HTTP/1.1", headerFields: reply.headers)!
+            self.client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            if !reply.body.isEmpty { self.client?.urlProtocol(self, didLoad: reply.body) }
+            self.client?.urlProtocolDidFinishLoading(self)
+        }
+
+        let delay = Self.lock.withLock { Self.responseDelay }
+        if delay > 0 {
+            DispatchQueue.global().asyncAfter(deadline: .now() + delay, execute: deliver)
+        } else {
+            deliver()
+        }
     }
 
-    override func stopLoading() {}
+    /// URLSession calls this when the task is cancelled. Saying nothing afterwards is what
+    /// lets it surface the cancellation to the caller instead of a fabricated answer.
+    override func stopLoading() { stopped.raise() }
 }
 
 /// A flag that can be raised from a `@Sendable` callback and read back afterwards.
