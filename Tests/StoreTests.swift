@@ -194,6 +194,22 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(notifier.count, 1, "a value nobody has seen before is worth a banner")
     }
 
+    /// P1-2. `AWAITING_RELEASE` declares notifyWhenLeaving; the wording table has to agree,
+    /// or the policy is a declaration nothing acts on.
+    func testBecomingReadyAfterWaitingOnAppleNotifies() async {
+        MockURLProtocol.respond(table(internalState: "READY_FOR_BETA_TESTING"))
+        let store = makeStore(dbName: "awaiting.sqlite")
+        await refreshAndWait(store)
+        XCTAssertEqual(store.apps.first?.status.state.id, .awaitingRelease)
+        XCTAssertEqual(notifier.count, 0)
+
+        MockURLProtocol.respond(table(internalState: "IN_BETA_TESTING"))
+        await refreshAndWait(store)
+
+        XCTAssertEqual(store.apps.first?.status.state.id, .internalTestingReady)
+        XCTAssertEqual(notifier.count, 1, "the build becoming installable is the whole point")
+    }
+
     // MARK: - Failure isolation
 
     /// Apps are matched by ID, not by name: names collide and change.

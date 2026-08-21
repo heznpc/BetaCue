@@ -9,6 +9,8 @@ enum AppStateID: String, Codable, Sendable, CaseIterable {
     case buildProcessing = "BUILD_PROCESSING"
     case buildInvalid = "BUILD_INVALID"
     case buildReadyNotDistributed = "BUILD_READY_NOT_DISTRIBUTED"
+    /// Attached to an audience that can be reached, but Apple has not opened it yet.
+    case awaitingRelease = "AWAITING_RELEASE"
     case internalTestingReady = "INTERNAL_TESTING_READY"
     case externalReviewRequired = "EXTERNAL_REVIEW_REQUIRED"
     case externalReviewPending = "EXTERNAL_REVIEW_PENDING"
@@ -213,6 +215,17 @@ extension AppStateDefinition {
                          blocker: detail ?? String(localized: "No test audience is connected."),
                          nextAction: .assignBuildToGroup,
                          notificationPolicy: .notifyWhenEntering, rawEvidence: evidence)
+
+        case .awaitingRelease:
+            // Reached only once an audience is confirmed reachable, so "Reaches nobody" —
+            // with a button offering to attach the build again — was both wrong and an
+            // invitation to send a redundant write.
+            return .init(id: id, reason: nil, severity: .info,
+                         headline: String(localized: "Waiting on Apple to open it"),
+                         description: detail
+                            ?? String(localized: "Testers are attached and Apple has not released the build to them yet. Nothing to do right now."),
+                         blocker: nil, nextAction: nil,
+                         notificationPolicy: .notifyWhenLeaving, rawEvidence: evidence)
 
         case .internalTestingReady:
             return .init(id: id, reason: nil, severity: .success,

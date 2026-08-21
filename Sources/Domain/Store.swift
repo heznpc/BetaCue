@@ -247,7 +247,8 @@ final class Store {
 
         switch to.id {
         case .internalTestingReady, .externalTestingReady, .externalReviewRequired:
-            guard from == .buildProcessing || from == .externalReviewPending else { return nil }
+            guard from == .buildProcessing || from == .externalReviewPending
+                    || from == .awaitingRelease else { return nil }
             if from == .externalReviewPending && to.id == .externalTestingReady {
                 return (String(localized: "\(app.name) approved for external testing"),
                         String(localized: "You can now distribute to external testers."))

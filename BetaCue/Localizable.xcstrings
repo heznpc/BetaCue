@@ -336,17 +336,6 @@
         }
       }
     },
-    "Apple has not released this build to testers yet.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Apple이 아직 이 빌드를 테스터에게 공개하지 않았습니다."
-          }
-        }
-      }
-    },
     "Apple hit a problem processing this build. The details are in App Store Connect.": {
       "extractionState": "manual",
       "localizations": {
@@ -1261,6 +1250,17 @@
         }
       }
     },
+    "Testers are attached and Apple has not released the build to them yet. Nothing to do right now.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스터는 연결돼 있고, Apple이 아직 이 빌드를 공개하지 않았습니다. 지금 할 일은 없습니다."
+          }
+        }
+      }
+    },
     "That key file isn't in the expected format. Check that it's the .p8 Apple gave you.": {
       "extractionState": "manual",
       "localizations": {
@@ -1422,6 +1422,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "버전"
+          }
+        }
+      }
+    },
+    "Waiting on Apple to open it": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple의 공개를 기다리는 중"
           }
         }
       }

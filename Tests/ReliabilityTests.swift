@@ -118,12 +118,35 @@ final class ReliabilityTests: XCTestCase {
     }
 
     /// Attached and reachable, but Apple has not released it — not "ready to test".
+    ///
+    /// P1-2. Nor "reaches nobody": this branch is only reached once the audience is confirmed
+    /// reachable, so the old headline contradicted the check that led to it, and the
+    /// "distribute to testers" button it carried invited a redundant write.
     func testAttachedButNotYetLiveIsNotReady() {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(internalState: "READY_FOR_BETA_TESTING")])
-        XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
+        XCTAssertEqual(status.state.id, .awaitingRelease)
         XCTAssertEqual(status.state.reason, .notYetLive)
         XCTAssertNil(status.testable)
+        XCTAssertNil(status.state.nextAction, "there is nothing to press; Apple is the one acting")
+        XCTAssertNil(status.state.blocker, "the audience is attached; nothing is blocking")
+    }
+
+    /// The same applies on the external side while the build still awaits submission.
+    func testAwaitingSubmissionWithoutInternalReleaseIsNotStranded() {
+        let status = RuleEngine.resolve(
+            groups: [group()],
+            builds: [build(internalState: "READY_FOR_BETA_TESTING",
+                           externalState: "READY_FOR_BETA_SUBMISSION")])
+        XCTAssertEqual(status.state.id, .awaitingRelease)
+        XCTAssertNotEqual(status.state.severity, .warning,
+                          "waiting on Apple is not something the user did wrong")
+    }
+
+    /// Leaving it has to produce actual wording, or `notifyWhenLeaving` fires into nothing.
+    func testAwaitingReleaseNotifiesOnTheWayOut() {
+        XCTAssertEqual(AppStateDefinition.make(.awaitingRelease).notificationPolicy,
+                       .notifyWhenLeaving)
     }
 
     /// P0-2. One channel answering settles attachment. Requiring both to be readable sent

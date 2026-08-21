@@ -55,6 +55,7 @@ triangle away under "Apple details".
 | `BUILD_PROCESSING` | Apple is processing | none (wait) |
 | `BUILD_INVALID` | Build rejected | open in ASC |
 | `BUILD_READY_NOT_DISTRIBUTED` | Reaches nobody | distribute to testers |
+| `AWAITING_RELEASE` | Waiting on Apple to open it | none (wait) |
 | `INTERNAL_TESTING_READY` | Ready to test | — |
 | `EXTERNAL_REVIEW_REQUIRED` | Internal testing only | open in ASC |
 | `EXTERNAL_REVIEW_PENDING` | In external beta review | none (wait) |
@@ -66,6 +67,11 @@ States carry a reason code so causes stay distinguishable inside one bucket
 (`MISSING_EXPORT_COMPLIANCE`, `EXPIRED`, `BETA_REJECTED`, `NO_GROUPS`, `BUILD_NOT_ASSIGNED`,
 `GROUPS_EMPTY`). Transitions are keyed on a `state + reason + build ID` fingerprint rather
 than the state ID alone, so a change of cause inside the same bucket still notifies.
+
+The reason codes also split `UNKNOWN` in two. `UNRECOGNIZED_*` means Apple sent a value this
+version has never seen — that is news, and it notifies. `BETA_STATE_UNREAD` and
+`AUDIENCE_UNREAD` mean a fetch came back empty; that says nothing about the app, so it
+neither notifies nor enters the state history.
 
 ## Notifications
 

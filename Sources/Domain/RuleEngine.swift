@@ -147,7 +147,8 @@ enum RuleEngine {
             break
         }
 
-        // An audience is configured. What Apple has opened decides the rest.
+        // An audience is configured, so nothing below is "reaches nobody" — the remaining
+        // question is only what Apple has opened.
         if latest.isLiveExternally { return .make(.externalTestingReady, evidence: evidence) }
 
         switch latest.externalState {
@@ -156,15 +157,11 @@ enum RuleEngine {
         case "READY_FOR_BETA_SUBMISSION":
             return latest.isLiveInternally
                 ? .make(.externalReviewRequired, evidence: evidence)
-                : .make(.buildReadyNotDistributed, evidence: evidence,
-                        reason: .notYetLive,
-                        detail: String(localized: "Apple has not released this build to testers yet."))
+                : .make(.awaitingRelease, evidence: evidence, reason: .notYetLive)
         default:
             return latest.isLiveInternally
                 ? .make(.internalTestingReady, evidence: evidence)
-                : .make(.buildReadyNotDistributed, evidence: evidence,
-                        reason: .notYetLive,
-                        detail: String(localized: "Apple has not released this build to testers yet."))
+                : .make(.awaitingRelease, evidence: evidence, reason: .notYetLive)
         }
     }
 
