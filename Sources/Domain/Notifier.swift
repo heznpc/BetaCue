@@ -6,11 +6,24 @@ import UserNotifications
 /// What matters is *which* transitions produce a banner, not that macOS displayed one.
 protocol NotificationSending: Sendable {
     func post(title: String, body: String)
+
+    /// Installs a handler for banners macOS refused.
+    ///
+    /// A refusal arrives after `post` has already returned, so it has to be pushed rather
+    /// than polled — and it has to reach observable state, because a dropped banner is never
+    /// retried and is therefore nowhere at all unless the window says so.
+    func observeFailures(_ handler: @escaping @MainActor @Sendable (String) -> Void)
 }
 
 /// Delivers through macOS.
 struct SystemNotifier: NotificationSending {
     func post(title: String, body: String) { Notifier.post(title: title, body: body) }
+
+    func observeFailures(_ handler: @escaping @MainActor @Sendable (String) -> Void) {
+        Notifier.observeDeliveryFailures { message in
+            Task { @MainActor in handler(message) }
+        }
+    }
 }
 
 /// Notification delivery.
@@ -51,6 +64,11 @@ enum Notifier {
 
     static var lastDeliveryFailure: String? { failureLog.latest }
 
+    /// Reports refusals as they happen. Only one observer is needed — the app has one Store.
+    static func observeDeliveryFailures(_ handler: @escaping @Sendable (String) -> Void) {
+        failureLog.observe(handler)
+    }
+
     static func post(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -66,9 +84,23 @@ enum Notifier {
     private final class FailureLog: @unchecked Sendable {
         private let lock = NSLock()
         private var message: String?
+        private var observer: (@Sendable (String) -> Void)?
 
         var latest: String? { lock.withLock { message } }
-        func record(_ text: String) { lock.withLock { message = text } }
+
+        func record(_ text: String) {
+            // Call the observer outside the lock: it hops to the main actor, and holding a
+            // lock across that is how a deadlock gets written.
+            let observer: (@Sendable (String) -> Void)? = lock.withLock {
+                message = text
+                return self.observer
+            }
+            observer?(text)
+        }
+
+        func observe(_ handler: @escaping @Sendable (String) -> Void) {
+            lock.withLock { observer = handler }
+        }
     }
 
     /// Opens this app's notification pane in System Settings. A denial cannot be undone in-app.

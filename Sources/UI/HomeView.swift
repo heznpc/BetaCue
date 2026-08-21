@@ -47,19 +47,27 @@ struct HomeView: View {
     private var statusBar: some View {
         // With notifications blocked, half of this app does nothing. Do not stay quiet about it.
         if store.notificationPermission.isBlocking {
-            HStack(spacing: 7) {
-                Image(systemName: "bell.slash.fill").foregroundStyle(.orange)
-                Text(String(localized: "Notifications are off, so state changes can't be announced"))
-                Spacer()
+            alertRow(String(localized: "Notifications are off, so state changes can't be announced"),
+                     symbol: "bell.slash.fill") {
                 Button(String(localized: "Open Settings")) {
                     if let url = Notifier.settingsURL { NSWorkspace.shared.open(url) }
                 }
                 .buttonStyle(.link)
             }
-            .font(.caption)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(.orange.opacity(0.12))
+        }
+
+        // The transition log is what decides whether a change is announced at all, so a
+        // database that stopped working is not a background detail — it is the difference
+        // between this app watching and this app only appearing to.
+        if let problem = store.persistenceHealth.message {
+            alertRow(problem, symbol: "externaldrive.badge.exclamationmark")
+        }
+
+        // A refused banner is never retried, because the transition it described is already
+        // recorded. If it is not on screen it is nowhere.
+        if let failure = store.lastNotificationFailure {
+            alertRow(String(localized: "The last notification couldn't be shown: \(failure)"),
+                     symbol: "bell.badge.slash")
         }
 
         TimelineView(.periodic(from: .now, by: 10)) { context in
@@ -81,6 +89,27 @@ struct HomeView: View {
             .padding(.vertical, 8)
             .background(.bar)
         }
+    }
+}
+
+extension HomeView {
+    private func alertRow(_ message: String, symbol: String) -> some View {
+        alertRow(message, symbol: symbol) { EmptyView() }
+    }
+
+    private func alertRow<Trailing: View>(
+        _ message: String, symbol: String, @ViewBuilder trailing: () -> Trailing
+    ) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: symbol).foregroundStyle(.orange)
+            Text(message).fixedSize(horizontal: false, vertical: true)
+            Spacer()
+            trailing()
+        }
+        .font(.caption)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(.orange.opacity(0.12))
     }
 }
 

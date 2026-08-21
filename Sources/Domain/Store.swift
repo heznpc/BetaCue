@@ -21,11 +21,16 @@ final class Store {
     var selectedAppID: String?
 
     /// Whether the local database is working. Its failure silences notifications.
-    var persistenceHealth: StateStore.Health { persistence.health }
+    ///
+    /// Stored rather than computed. These were computed properties reading a separate object
+    /// and a static, and `@Observable` tracks stored properties — it cannot see a change it
+    /// was never told about, so the window would have gone on showing the old answer even
+    /// once something was wired to read it.
+    private(set) var persistenceHealth: StateStore.Health = .healthy
 
     /// The last banner macOS refused to show, if any. A dropped notification is never
     /// retried — the transition is already recorded — so it has to be visible somewhere.
-    var lastNotificationFailure: String? { Notifier.lastDeliveryFailure }
+    private(set) var lastNotificationFailure: String?
 
     var config: BetaCueConfig {
         didSet {
@@ -87,6 +92,11 @@ final class Store {
         // Show the last known state immediately instead of waiting on the network. (spec UC-01 ①)
         self.apps = Self.sorted(persistence.loadSnapshots())
         self.lastRefresh = apps.map(\.fetchedAt).max()
+        // A database that failed to open has already happened by now, migration included.
+        self.persistenceHealth = persistence.health
+        notifier.observeFailures { [weak self] message in
+            self?.lastNotificationFailure = message
+        }
     }
 
     private func makeClient() -> ASCClient? {
@@ -173,7 +183,12 @@ final class Store {
             return
         }
         isRefreshing = true
-        defer { isRefreshing = false }
+        defer {
+            isRefreshing = false
+            // Every path below can degrade the database — a snapshot that would not save, a
+            // transition that would not record. Mirror the verdict out on the way past.
+            persistenceHealth = persistence.health
+        }
 
         do {
             let appPage: PagedResult<ASCResource<AppAttributes>> =

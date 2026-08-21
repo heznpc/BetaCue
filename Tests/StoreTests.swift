@@ -357,6 +357,60 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(notifier.count, 1, "got: \(notifier.messages)")
     }
 
+    // MARK: - Diagnostics the window can actually see
+
+    /// P1-6. `persistenceHealth` was a computed property reading another object, so
+    /// `@Observable` had nothing to track: even once the window was wired to read it, it
+    /// would have gone on showing the answer from whenever the view last happened to redraw.
+    func testPersistenceHealthIsObservableWhenItChanges() async throws {
+        let folder = directory.appendingPathComponent("readonly", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let store = makeStore(
+            persistence: StateStore(url: folder.appendingPathComponent("state.sqlite")))
+        XCTAssertFalse(store.persistenceHealth.isDegraded,
+                       "it has to start healthy for the change to mean anything")
+
+        let changed = Flag()
+        withObservationTracking { _ = store.persistenceHealth } onChange: { changed.raise() }
+
+        // Writes fail from here: SQLite cannot lay its journal down beside the database in a
+        // directory it may not write to.
+        try FileManager.default.setAttributes([.posixPermissions: 0o555],
+                                              ofItemAtPath: folder.path)
+        defer {
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                                   ofItemAtPath: folder.path)
+        }
+
+        MockURLProtocol.respond(table())
+        await refreshAndWait(store)
+
+        XCTAssertTrue(changed.isRaised,
+                      "a computed property reading another object cannot be observed")
+        XCTAssertTrue(store.persistenceHealth.isDegraded)
+        XCTAssertNotNil(store.persistenceHealth.message)
+    }
+
+    /// P1-6. Same for a refused banner. It arrives after `post` returns and is never retried,
+    /// so unless it lands in observable state it is nowhere.
+    func testARefusedNotificationBecomesVisible() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore(dbName: "refused.sqlite")
+        XCTAssertNil(store.lastNotificationFailure)
+
+        let changed = Flag()
+        withObservationTracking {
+            XCTAssertNil(store.lastNotificationFailure)
+        } onChange: {
+            changed.raise()
+        }
+        notifier.reportFailure("Notifications are not allowed for this application")
+
+        XCTAssertTrue(changed.isRaised)
+        XCTAssertEqual(store.lastNotificationFailure,
+                       "Notifications are not allowed for this application")
+    }
+
     // MARK: - Failure isolation
 
     /// Apps are matched by ID, not by name: names collide and change.

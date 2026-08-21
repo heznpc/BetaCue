@@ -1305,6 +1305,17 @@
         }
       }
     },
+    "The last notification couldn't be shown: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "마지막 알림을 표시하지 못했습니다: %@"
+          }
+        }
+      }
+    },
     "The local database could not be upgraded, so state changes are not being recorded.": {
       "extractionState": "manual",
       "localizations": {

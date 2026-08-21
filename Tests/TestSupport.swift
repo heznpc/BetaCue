@@ -82,6 +82,17 @@ final class MockURLProtocol: URLProtocol {
     override func stopLoading() {}
 }
 
+/// A flag that can be raised from a `@Sendable` callback and read back afterwards.
+///
+/// `withObservationTracking`'s onChange is `@Sendable`, so a plain captured `var` will not do.
+final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var raised = false
+
+    var isRaised: Bool { lock.withLock { raised } }
+    func raise() { lock.withLock { raised = true } }
+}
+
 /// Holds a request open until the test lets it go.
 ///
 /// Some of what Store has to get right is about *timing* — a key swapped while a fetch is in
@@ -115,12 +126,24 @@ final class FakeNotifier: NotificationSending, @unchecked Sendable {
 
     private let lock = NSLock()
     private var sent: [Sent] = []
+    private var onFailure: (@MainActor @Sendable (String) -> Void)?
 
     var messages: [Sent] { lock.withLock { sent } }
     var count: Int { messages.count }
 
     func post(title: String, body: String) {
         lock.withLock { sent.append(Sent(title: title, body: body)) }
+    }
+
+    func observeFailures(_ handler: @escaping @MainActor @Sendable (String) -> Void) {
+        lock.withLock { onFailure = handler }
+    }
+
+    /// Simulates macOS refusing a banner, which the real notifier reports asynchronously.
+    @MainActor
+    func reportFailure(_ message: String) {
+        let handler = lock.withLock { onFailure }
+        handler?(message)
     }
 }
 
