@@ -122,6 +122,69 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(store.loadSnapshots().map(\.id), ["keep"])
     }
 
+    /// P1-4. The old migrator ran the schema change and recorded the version as two separate
+    /// statements. A crash in between left the column applied with the version still at the
+    /// previous value, and every later launch replayed the ALTER, hit "duplicate column", and
+    /// degraded — permanently, since nothing ever moved the version forward.
+    func testAdoptsAMigrationThatWasAppliedButNeverRecorded() throws {
+        try runRawSQL("""
+        CREATE TABLE snapshots (
+            app_id TEXT PRIMARY KEY, payload BLOB NOT NULL, fetched_at REAL NOT NULL
+        );
+        CREATE TABLE state_transitions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id      TEXT NOT NULL,
+            from_state  TEXT,
+            to_state    TEXT NOT NULL,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            at          REAL NOT NULL,
+            reason      TEXT
+        );
+        CREATE TABLE seen_feedback (
+            app_id TEXT NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL,
+            PRIMARY KEY (app_id, kind)
+        );
+        PRAGMA user_version = 1;
+        """, at: dbURL)
+
+        let store = StateStore(url: dbURL)
+        XCTAssertEqual(store.health, .healthy,
+                       "an applied step has to be adopted, not replayed: \(store.health)")
+        XCTAssertTrue(store.recordTransition(appID: "a", from: nil, to: .noBuild,
+                                             fingerprint: "NO_BUILD|-|-", reason: .expired))
+        XCTAssertEqual(store.transitions(appID: "a").first?.reason, "EXPIRED")
+    }
+
+    /// And the adoption has to be recorded, or the next launch is back where it started.
+    func testTheAdoptedVersionSticksAcrossReopening() throws {
+        try runRawSQL("""
+        CREATE TABLE snapshots (
+            app_id TEXT PRIMARY KEY, payload BLOB NOT NULL, fetched_at REAL NOT NULL
+        );
+        CREATE TABLE state_transitions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, app_id TEXT NOT NULL, from_state TEXT,
+            to_state TEXT NOT NULL, fingerprint TEXT NOT NULL DEFAULT '', at REAL NOT NULL,
+            reason TEXT
+        );
+        CREATE TABLE seen_feedback (
+            app_id TEXT NOT NULL, kind TEXT NOT NULL, count INTEGER NOT NULL,
+            PRIMARY KEY (app_id, kind)
+        );
+        PRAGMA user_version = 1;
+        """, at: dbURL)
+
+        _ = StateStore(url: dbURL)
+        XCTAssertEqual(StateStore(url: dbURL).health, .healthy)
+        XCTAssertEqual(try userVersion(of: dbURL), 2)
+    }
+
+    /// A normal upgrade leaves the version and the schema agreeing with each other.
+    func testAFreshDatabaseEndsAtTheCurrentSchemaVersion() throws {
+        _ = StateStore(url: dbURL)
+        XCTAssertEqual(try userVersion(of: dbURL), 2,
+                       "the schema and the recorded version have to move together")
+    }
+
     /// P1-3. A write that did not land has to say so; the caller's notification decision
     /// depends on knowing whether the record exists.
     func testARefusedWriteIsReportedRatherThanSwallowed() throws {
@@ -159,6 +222,20 @@ final class StateStoreTests: XCTestCase {
     private func snapshot(id: String) -> AppSnapshot {
         AppSnapshot(id: id, name: id, bundleID: "app.\(id)", groups: [], builds: [],
                     fetchedAt: Date(timeIntervalSince1970: 1_700_000_000))
+    }
+
+    private func userVersion(of url: URL) throws -> Int {
+        let process = Process()
+        let pipe = Pipe()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [url.path, "PRAGMA user_version;"]
+        process.standardOutput = pipe
+        try process.run()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let text = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Int(text) ?? -1
     }
 
     private func runRawSQL(_ sql: String, at url: URL) throws {

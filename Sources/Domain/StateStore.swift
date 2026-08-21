@@ -62,7 +62,8 @@ final class StateStore: @unchecked Sendable {
     /// Versioned migrations keyed on `PRAGMA user_version`.
     ///
     /// Index i upgrades the database from version i to i+1. Adding a column ad hoc worked for
-    /// one change; anything past that needs an ordered, recorded sequence.
+    /// one change; anything past that needs an ordered, recorded sequence. Adding a step means
+    /// bumping `schemaVersion` and teaching `isAlreadyApplied` how to recognize it.
     private static let migrations: [String] = [
         // 0 → 1: initial tables
         """
@@ -100,24 +101,64 @@ final class StateStore: @unchecked Sendable {
         // fingerprint column, so adopt them at the right version instead of replaying step 0.
         var version = currentUserVersion()
         if version == 0 && tableExists("state_transitions") {
-            version = columnExists(table: "state_transitions", column: "fingerprint") ? 1 : 0
-            if version == 0 {
+            if columnExists(table: "state_transitions", column: "fingerprint") {
+                guard setUserVersion(1) else { return degradeMigration() }
+            } else {
                 // v0 table without fingerprint: bring it forward before entering the sequence.
-                run("ALTER TABLE state_transitions ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';")
-                version = 1
+                guard apply(
+                    "ALTER TABLE state_transitions ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';",
+                    recordingVersion: 1)
+                else { return degradeMigration() }
             }
-            setUserVersion(version)
+            version = 1
         }
 
         while version < Self.schemaVersion {
-            let step = Self.migrations[Int(version)]
-            guard run(step) else {
-                _health = .degraded(String(localized: "The local database could not be upgraded, so state changes are not being recorded."))
-                return
-            }
-            version += 1
-            setUserVersion(version)
+            let next = version + 1
+            // An older migrator applied the schema and recorded the version as two separate
+            // statements. A crash in between left the change applied at the previous version,
+            // and replaying it then failed with "duplicate column" — degrading the database
+            // permanently on every subsequent launch. Adopting an applied step is what gets
+            // those databases out again; running each step and its version together is what
+            // stops new ones getting in.
+            let ok = isAlreadyApplied(step: version)
+                ? setUserVersion(next)
+                : apply(Self.migrations[Int(version)], recordingVersion: next)
+            guard ok else { return degradeMigration() }
+            version = next
         }
+    }
+
+    /// Is the schema change for this step already present in the file?
+    private func isAlreadyApplied(step: Int32) -> Bool {
+        switch step {
+        case 0:
+            return tableExists("snapshots") && tableExists("state_transitions")
+                && tableExists("seen_feedback")
+        case 1:
+            return columnExists(table: "state_transitions", column: "reason")
+        default:
+            return false
+        }
+    }
+
+    /// Runs one migration step and records the new version in the same transaction.
+    ///
+    /// `PRAGMA user_version` participates in transactions, so either both land or neither
+    /// does — there is no window where the schema has moved and the version has not.
+    private func apply(_ sql: String, recordingVersion version: Int32) -> Bool {
+        queue.sync {
+            guard db != nil, exec("BEGIN IMMEDIATE;") else { return false }
+            guard exec(sql), exec("PRAGMA user_version = \(version);") else {
+                exec("ROLLBACK;")
+                return false
+            }
+            return exec("COMMIT;")
+        }
+    }
+
+    private func degradeMigration() {
+        _health = .degraded(String(localized: "The local database could not be upgraded, so state changes are not being recorded."))
     }
 
     private func currentUserVersion() -> Int32 {
@@ -130,8 +171,8 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    private func setUserVersion(_ v: Int32) {
-        _ = run("PRAGMA user_version = \(v);")
+    private func setUserVersion(_ v: Int32) -> Bool {
+        run("PRAGMA user_version = \(v);")
     }
 
     private func tableExists(_ name: String) -> Bool {
@@ -163,13 +204,18 @@ final class StateStore: @unchecked Sendable {
     /// Runs SQL and reports whether it worked, instead of discarding the result.
     @discardableResult
     private func run(_ sql: String) -> Bool {
-        queue.sync {
-            guard db != nil else { return false }
-            var error: UnsafeMutablePointer<CChar>?
-            let ok = sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK
-            if let error { sqlite3_free(error) }
-            return ok
-        }
+        queue.sync { exec(sql) }
+    }
+
+    /// The same thing for callers already holding the queue — `DispatchQueue.sync` does not
+    /// nest, so a transaction cannot be assembled out of `run` calls.
+    @discardableResult
+    private func exec(_ sql: String) -> Bool {
+        guard db != nil else { return false }
+        var error: UnsafeMutablePointer<CChar>?
+        let ok = sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK
+        if let error { sqlite3_free(error) }
+        return ok
     }
 
     /// Records a failure that the user should know about.
