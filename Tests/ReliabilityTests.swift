@@ -13,14 +13,16 @@ final class ReliabilityTests: XCTestCase {
         externalState: String? = nil,
         betaStateIsKnown: Bool = true,
         assignedGroupIDs: [String]? = ["g"],
-        individualTesterCount: Int? = 0
+        individualTesterCount: Int? = 0,
+        audienceType: String? = nil
     ) -> BuildSnapshot {
         BuildSnapshot(
             id: "b1", number: "1", marketingVersion: "1.0.0", platform: "IOS",
             processingState: processing, internalState: internalState,
             externalState: externalState, betaStateIsKnown: betaStateIsKnown,
             uploadedAt: nil, expiresAt: nil, isExpired: false,
-            assignedGroupIDs: assignedGroupIDs, individualTesterCount: individualTesterCount)
+            assignedGroupIDs: assignedGroupIDs, individualTesterCount: individualTesterCount,
+            audienceType: audienceType)
     }
 
     private func group(
@@ -122,6 +124,72 @@ final class ReliabilityTests: XCTestCase {
         XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
         XCTAssertEqual(status.state.reason, "NOT_YET_LIVE")
         XCTAssertNil(status.testable)
+    }
+
+    // MARK: - Individual testers have no readable channel
+
+    /// P0-1. Apple admits both internal and external testers as individual invitees and returns
+    /// `BetaTester.state` as null, so with only the internal channel open nobody can say whether
+    /// those two people can install. Counting them as internal was the confident wrong answer.
+    func testIndividualTestersAreNotAssumedInternal() {
+        let status = RuleEngine.resolve(
+            groups: [],
+            builds: [build(externalState: "IN_BETA_REVIEW",
+                           assignedGroupIDs: [], individualTesterCount: 2)])
+
+        XCTAssertNotEqual(status.state.id, .buildReadyNotDistributed,
+                          "two people are invited to this build; it is not stranded")
+        XCTAssertNil(status.testable,
+                     "with external review unfinished, two testers of unknown kind are not proof "
+                     + "that anyone can install")
+    }
+
+    /// `INTERNAL_ONLY` rules out external individual testers, which settles the question.
+    func testInternalOnlyBuildSettlesTheIndividualChannel() {
+        let status = RuleEngine.resolve(
+            groups: [],
+            builds: [build(assignedGroupIDs: [], individualTesterCount: 2,
+                           audienceType: "INTERNAL_ONLY")])
+        XCTAssertEqual(status.testable?.id, "b1")
+        XCTAssertEqual(status.audience?.individualTesters, 2)
+        XCTAssertEqual(status.audience?.undeterminedIndividualTesters, 0)
+    }
+
+    /// An `APP_STORE_ELIGIBLE` build may carry external individual testers, so the internal
+    /// channel being open proves nothing about them.
+    func testAppStoreEligibleBuildLeavesTheIndividualChannelUnknown() {
+        let status = RuleEngine.resolve(
+            groups: [],
+            builds: [build(assignedGroupIDs: [], individualTesterCount: 2,
+                           audienceType: "APP_STORE_ELIGIBLE")])
+        XCTAssertNil(status.testable)
+        let audience = build(assignedGroupIDs: [], individualTesterCount: 2,
+                             audienceType: "APP_STORE_ELIGIBLE").installableAudience(among: [])
+        XCTAssertEqual(audience?.undeterminedIndividualTesters, 2)
+        XCTAssertEqual(audience?.individualTesters, 0)
+        XCTAssertFalse(audience?.reachesSomeone ?? true)
+    }
+
+    /// With both channels open the kind of tester stops mattering.
+    func testBothChannelsOpenMakeIndividualTestersCountable() {
+        let status = RuleEngine.resolve(
+            groups: [],
+            builds: [build(externalState: "IN_BETA_TESTING",
+                           assignedGroupIDs: [], individualTesterCount: 3,
+                           audienceType: "APP_STORE_ELIGIBLE")])
+        XCTAssertEqual(status.audience?.individualTesters, 3)
+        XCTAssertNotNil(status.testable)
+    }
+
+    /// A readable group audience still decides on its own; the undetermined channel only adds.
+    func testUndeterminedIndividualsDoNotHideARealAudience() {
+        let status = RuleEngine.resolve(
+            groups: [group(testers: 2)],
+            builds: [build(externalState: "IN_BETA_REVIEW", individualTesterCount: 2,
+                           audienceType: "APP_STORE_ELIGIBLE")])
+        XCTAssertEqual(status.audience?.internalTesters, 2)
+        XCTAssertEqual(status.audience?.undeterminedIndividualTesters, 2)
+        XCTAssertEqual(status.testable?.id, "b1")
     }
 
     // MARK: - Determinism

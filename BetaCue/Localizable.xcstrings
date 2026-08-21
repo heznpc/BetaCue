@@ -215,6 +215,17 @@
         }
       }
     },
+    "%lld individual, channel unconfirmed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "개별 %lld명, 채널 미확인"
+          }
+        }
+      }
+    },
     "%lld internal": {
       "extractionState": "manual",
       "localizations": {

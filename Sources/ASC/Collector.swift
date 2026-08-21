@@ -137,7 +137,8 @@ enum Collector {
                         expiresAt: b.attributes.expirationDate,
                         isExpired: b.attributes.expired ?? false,
                         assignedGroupIDs: nil,
-                        individualTesterCount: (ind?.isComplete ?? false) ? ind?.values.count : nil)
+                        individualTesterCount: (ind?.isComplete ?? false) ? ind?.values.count : nil,
+                        audienceType: b.attributes.buildAudienceType)
                     let problem = d == nil
                         ? String(localized: "Couldn't read distribution state for build \(b.attributes.version ?? b.id).") : nil
                     return (index, snapshot, problem)

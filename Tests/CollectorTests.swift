@@ -104,6 +104,24 @@ final class CollectorTests: XCTestCase {
         XCTAssertEqual(snapshot.status.state.id, .unknown)
     }
 
+    /// Whether individual testers can install depends on this field, so it has to survive
+    /// the trip from JSON to snapshot rather than being quietly dropped.
+    func testCarriesTheBuildAudienceType() async throws {
+        var table = healthyTable()
+        table["/v1/builds?"] = .json(Fixture.builds(["1"], audienceType: "INTERNAL_ONLY"))
+        MockURLProtocol.respond(table)
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertEqual(snapshot.builds.first?.audienceType, "INTERNAL_ONLY")
+    }
+
+    func testAbsentBuildAudienceTypeStaysNil() async throws {
+        MockURLProtocol.respond(healthyTable())
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertNil(snapshot.builds.first?.audienceType,
+                     "an unread audience type must not read as a value")
+    }
+
     func testFailedIndividualTesterFetchLeavesTheCountUnknown() async throws {
         var table = healthyTable()
         table["relationships/individualTesters"] = .init(status: 500)

@@ -33,12 +33,15 @@ enum RuleEngine {
     ///
     /// Processing succeeding is not the same as being installable. Apple has to have finished
     /// beta processing *and* the build has to reach someone through a channel that is actually
-    /// open — an external group behind an unfinished review reaches nobody today.
+    /// open — an external group behind an unfinished review reaches nobody today. An audience
+    /// whose channel could not be established does not qualify either: "maybe installable"
+    /// must not be reported as "installable".
     static func currentlyTestable(groups: [GroupSnapshot], builds: [BuildSnapshot])
         -> BuildSnapshot?
     {
         builds.first { build in
-            build.processingSucceeded && build.installableAudience(among: groups) != nil
+            build.processingSucceeded
+                && build.installableAudience(among: groups)?.reachesSomeone == true
         }
     }
 

@@ -18,14 +18,15 @@ final class RuleEngineTests: XCTestCase {
         expired: Bool = false,
         uploaded: Date? = nil,
         assignedGroups: [String] = ["g-internal"],
-        individualTesters: Int = 0
+        individualTesters: Int = 0,
+        audienceType: String? = nil
     ) -> BuildSnapshot {
         BuildSnapshot(
             id: id, number: number, marketingVersion: "1.0.0", platform: "IOS",
             processingState: processing, internalState: internalState,
             externalState: externalState, uploadedAt: uploaded, expiresAt: nil,
             isExpired: expired, assignedGroupIDs: assignedGroups,
-            individualTesterCount: individualTesters)
+            individualTesterCount: individualTesters, audienceType: audienceType)
     }
 
     private func group(
@@ -106,12 +107,19 @@ final class RuleEngineTests: XCTestCase {
     }
 
     /// Individual testers count as distribution even with no groups at all.
+    ///
+    /// Attachment and installability are separate questions: being invited to the build is
+    /// enough for the build not to be stranded, but on an `INTERNAL_ONLY` build the invitee
+    /// also has to be someone the open internal channel reaches.
     func testIndividualTesterCountsAsDistribution() {
         let status = RuleEngine.resolve(
-            groups: [], builds: [build(assignedGroups: [], individualTesters: 2)])
+            groups: [],
+            builds: [build(assignedGroups: [], individualTesters: 2,
+                           audienceType: "INTERNAL_ONLY")])
         XCTAssertNotEqual(status.state.id, .buildReadyNotDistributed,
                           "an individually invited tester means this is distributed")
         XCTAssertNotNil(status.testable)
+        XCTAssertEqual(status.audience?.individualTesters, 2)
     }
 
     /// A public link can reach people even with zero enrolled testers.

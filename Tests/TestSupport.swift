@@ -133,11 +133,13 @@ enum Fixture {
         return #"{"data":[\#(entries.joined(separator: ","))],"meta":{"paging":{"total":\#(ids.count)}}}"#
     }
 
-    static func builds(_ ids: [String], state: String = "VALID") -> String {
+    static func builds(_ ids: [String], state: String = "VALID",
+                       audienceType: String? = nil) -> String {
+        let audience = audienceType.map { #","buildAudienceType":"\#($0)""# } ?? ""
         let entries = ids.map {
             """
             {"type":"builds","id":"\($0)","attributes":
-             {"version":"\($0)","processingState":"\(state)","expired":false}}
+             {"version":"\($0)","processingState":"\(state)","expired":false\(audience)}}
             """
         }
         return #"{"data":[\#(entries.joined(separator: ","))]}"#

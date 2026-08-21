@@ -63,6 +63,9 @@ struct BuildAttributes: Decodable, Sendable {
     var expired: Bool?
     var usesNonExemptEncryption: Bool?
     var minOsVersion: String?
+    /// `INTERNAL_ONLY` or `APP_STORE_ELIGIBLE`. Limited evidence about who may be invited
+    /// directly to this build — never a statement about who actually is.
+    var buildAudienceType: String?
 }
 
 struct BuildBetaDetailAttributes: Decodable, Sendable {

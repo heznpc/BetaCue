@@ -65,11 +65,20 @@ struct Audience: Equatable, Sendable {
     var externalTesters = 0
     var individualTesters = 0
     var hasPublicLink = false
+    /// Testers invited straight to the build whose channel could not be established.
+    ///
+    /// Apple lets both internal and external testers be invited to a build directly and
+    /// returns `BetaTester.state` as null, so when only one of the two channels is open
+    /// there is no way to tell whether these people can install. Counting them as installable
+    /// is the confident wrong answer; counting them as zero is another one.
+    var undeterminedIndividualTesters = 0
 
-    var isEmpty: Bool {
-        internalTesters == 0 && externalTesters == 0
-            && individualTesters == 0 && !hasPublicLink
+    /// Someone can definitely install right now. Undetermined testers are not that.
+    var reachesSomeone: Bool {
+        internalTesters > 0 || externalTesters > 0 || individualTesters > 0 || hasPublicLink
     }
+
+    var isEmpty: Bool { !reachesSomeone && undeterminedIndividualTesters == 0 }
 
     /// Rendering lives here so the counts stay assertable without a locale.
     var description: String {
@@ -78,6 +87,9 @@ struct Audience: Equatable, Sendable {
         if externalTesters > 0 { parts.append(String(localized: "\(externalTesters) external")) }
         if individualTesters > 0 { parts.append(String(localized: "\(individualTesters) individual")) }
         if hasPublicLink { parts.append(String(localized: "public link")) }
+        if undeterminedIndividualTesters > 0 {
+            parts.append(String(localized: "\(undeterminedIndividualTesters) individual, channel unconfirmed"))
+        }
         return parts.isEmpty ? String(localized: "no audience") : parts.joined(separator: " · ")
     }
 }
@@ -121,6 +133,10 @@ struct BuildSnapshot: Identifiable, Sendable, Codable {
     var assignedGroupIDs: [String]?
     /// Testers invited directly to this build without a group. `nil` means unread.
     var individualTesterCount: Int?
+    /// Apple's `buildAudienceType`: `INTERNAL_ONLY` or `APP_STORE_ELIGIBLE`. `nil` when unread.
+    ///
+    /// Supporting evidence only. It says who *may* be invited, never who is.
+    var audienceType: String?
 
     var processingSucceeded: Bool { processingState == "VALID" && !isExpired }
 
@@ -157,6 +173,23 @@ struct BuildSnapshot: Identifiable, Sendable, Codable {
         return .unreachable
     }
 
+    /// Can the testers invited straight to this build install it right now?
+    ///
+    /// Apple admits both internal and external testers as individual invitees and reports no
+    /// usable per-tester state, so the channel is generally unknowable. Two situations settle
+    /// it anyway: when both channels are open the kind stops mattering, and an `INTERNAL_ONLY`
+    /// build cannot carry an external individual tester at all — which is the whole extent to
+    /// which `buildAudienceType` is allowed to be used here.
+    var individualTesterReachability: Reachability {
+        switch (isLiveInternally, isLiveExternally) {
+        case (false, false): return .unreachable
+        case (true, true):   return .reachable
+        default:
+            guard audienceType == "INTERNAL_ONLY" else { return .unknown }
+            return isLiveInternally ? .reachable : .unreachable
+        }
+    }
+
     /// Who can install this build right now, honouring Apple's beta states.
     func installableAudience(among groups: [GroupSnapshot]) -> Audience? {
         guard betaStateIsKnown else { return nil }
@@ -165,12 +198,18 @@ struct BuildSnapshot: Identifiable, Sendable, Codable {
         if isLiveInternally {
             let reachable = reachableGroups(among: groups).filter(\.isInternal)
             audience.internalTesters = reachable.reduce(0) { $0 + ($1.testerCount ?? 0) }
-            audience.individualTesters = individualTesterCount ?? 0
         }
         if isLiveExternally {
             let reachable = reachableGroups(among: groups).filter { !$0.isInternal }
             audience.externalTesters = reachable.reduce(0) { $0 + ($1.testerCount ?? 0) }
             audience.hasPublicLink = reachable.contains(where: \.publicLinkEnabled)
+        }
+        if let count = individualTesterCount, count > 0 {
+            switch individualTesterReachability {
+            case .reachable:   audience.individualTesters = count
+            case .unknown:     audience.undeterminedIndividualTesters = count
+            case .unreachable: break
+            }
         }
         return audience.isEmpty ? nil : audience
     }
