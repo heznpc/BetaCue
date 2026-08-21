@@ -30,11 +30,24 @@ final class StoreTests: XCTestCase {
     }
 
     private func makeStore(dbName: String = "state.sqlite") -> Store {
+        makeStore(persistence: StateStore(url: directory.appendingPathComponent(dbName)))
+    }
+
+    private func makeStore(persistence: StateStore) -> Store {
         Store(config: config,
-              persistence: StateStore(url: directory.appendingPathComponent(dbName)),
+              persistence: persistence,
               session: MockURLProtocol.makeSession(),
               notifier: notifier,
               retryDelayScale: 0)
+    }
+
+    /// A store whose database cannot be opened at all — nothing reads back, nothing writes.
+    private func unopenablePersistence() throws -> StateStore {
+        let blocked = directory.appendingPathComponent("blocked-db", isDirectory: true)
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        let persistence = StateStore(url: blocked)   // a directory is not a database file
+        XCTAssertTrue(persistence.health.isDegraded, "the fixture has to actually be broken")
+        return persistence
     }
 
     private func table(apps: [String] = ["a1"],
@@ -208,6 +221,65 @@ final class StoreTests: XCTestCase {
 
         XCTAssertEqual(store.apps.first?.status.state.id, .internalTestingReady)
         XCTAssertEqual(notifier.count, 1, "the build becoming installable is the whole point")
+    }
+
+    // MARK: - Persistence failure and notification consistency
+
+    /// P1-3. The transition log is the only thing that makes a banner a one-time event. With
+    /// nothing written down, the previous state stayed unknown and every refresh looked like
+    /// the first one — so the app either announced the same change forever or, taking the
+    /// other branch, never announced anything at all.
+    func testABrokenDatabaseStillNotifiesExactlyOnce() async throws {
+        let store = makeStore(persistence: try unopenablePersistence())
+
+        MockURLProtocol.respond(table(internalState: "PROCESSING"))
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 0, "the first sighting is never an announcement")
+
+        MockURLProtocol.respond(table(internalState: "IN_BETA_TESTING"))
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 1)
+
+        // The change has not moved. Nothing new to say, however broken the disk is.
+        await refreshAndWait(store)
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 1, "an unwritten transition must not repeat every poll")
+    }
+
+    /// The failure is not silent: it is on `persistenceHealth`, which the UI reads.
+    func testABrokenDatabaseIsReportedWhileStillNotifying() async throws {
+        let store = makeStore(persistence: try unopenablePersistence())
+        MockURLProtocol.respond(table())
+        await refreshAndWait(store)
+        XCTAssertTrue(store.persistenceHealth.isDegraded)
+        XCTAssertNotNil(store.persistenceHealth.message)
+    }
+
+    /// P1-3. A certificate banner is meant to fire once, and the stored count is the only
+    /// record of whether it already did. Unreadable is not the same as "never announced".
+    func testCertificateNoticeIsHeldBackWhenNothingCanBeRecorded() async throws {
+        let store = makeStore(persistence: try unopenablePersistence())
+        var t = table()
+        t["/v1/certificates"] = .json(Fixture.expiringCertificate(daysFromNow: 10))
+        MockURLProtocol.respond(t)
+
+        await refreshAndWait(store)
+        await refreshAndWait(store)
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 0,
+                       "without a record of what was announced, repeating it every poll is worse")
+    }
+
+    /// With a working database it still fires, and still only once.
+    func testCertificateNoticeFiresOncePerCertificate() async {
+        var t = table()
+        t["/v1/certificates"] = .json(Fixture.expiringCertificate(daysFromNow: 10))
+        MockURLProtocol.respond(t)
+        let store = makeStore(dbName: "certs.sqlite")
+
+        await refreshAndWait(store)
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 1, "got: \(notifier.messages)")
     }
 
     // MARK: - Failure isolation

@@ -74,13 +74,6 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(loaded.first?.groups.first?.testerCount, 2)
     }
 
-    func testFeedbackCountExchangeReportsPreviousValue() {
-        let store = StateStore(url: dbURL)
-        XCTAssertNil(store.exchangeFeedbackCount(appID: "app-1", kind: "crash", newCount: 3),
-                     "a first-seen key has no previous count")
-        XCTAssertEqual(store.exchangeFeedbackCount(appID: "app-1", kind: "crash", newCount: 5), 3)
-    }
-
     /// Versioned migrations must adopt a pre-versioning database instead of replaying step 0
     /// or refusing to run.
     func testAdoptsPreVersioningDatabase() throws {
@@ -127,6 +120,29 @@ final class StateStoreTests: XCTestCase {
         // Complete list: it is really gone.
         store.saveSnapshots([snapshot(id: "keep")], appListWasComplete: true)
         XCTAssertEqual(store.loadSnapshots().map(\.id), ["keep"])
+    }
+
+    /// P1-3. A write that did not land has to say so; the caller's notification decision
+    /// depends on knowing whether the record exists.
+    func testARefusedWriteIsReportedRatherThanSwallowed() throws {
+        let blocked = directory.appendingPathComponent("blocked-write", isDirectory: true)
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        let store = StateStore(url: blocked)
+
+        XCTAssertFalse(store.recordTransition(appID: "a", from: nil, to: .noBuild,
+                                              fingerprint: "NO_BUILD|-|-"))
+        XCTAssertEqual(store.exchangeFeedbackCount(appID: "a", kind: "k", newCount: 1),
+                       .unavailable,
+                       "'couldn't read' is not the same answer as 'nothing stored yet'")
+    }
+
+    /// A healthy store distinguishes the first exchange from later ones.
+    func testFeedbackExchangeSeparatesFirstSightingFromRepeat() {
+        let store = StateStore(url: dbURL)
+        XCTAssertEqual(store.exchangeFeedbackCount(appID: "a", kind: "k", newCount: 1),
+                       .exchanged(previous: nil))
+        XCTAssertEqual(store.exchangeFeedbackCount(appID: "a", kind: "k", newCount: 2),
+                       .exchanged(previous: 1))
     }
 
     /// A database that cannot be opened has to say so rather than pretending to work.

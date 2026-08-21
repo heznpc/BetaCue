@@ -168,6 +168,17 @@ enum Fixture {
         return #"{"data":{"type":"buildBetaDetails","id":"d","attributes":{\#(attrs)}}}"#
     }
 
+    /// A certificate close enough to expiry that BetaCue is supposed to say something.
+    static func expiringCertificate(daysFromNow: Int, id: String = "c1") -> String {
+        let expiry = Date().addingTimeInterval(Double(daysFromNow) * 86_400 + 3_600)
+        let stamp = expiry.formatted(.iso8601)
+        return """
+        {"data":[{"type":"certificates","id":"\(id)","attributes":
+         {"name":"Developer ID Application","certificateType":"DEVELOPER_ID_APPLICATION",
+          "expirationDate":"\(stamp)"}}]}
+        """
+    }
+
     static let emptyRelationship = #"{"data":[],"meta":{"paging":{"total":0}}}"#
     static let nullSingle = #"{"data":null}"#
 }

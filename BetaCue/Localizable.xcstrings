@@ -674,6 +674,17 @@
         }
       }
     },
+    "Couldn't record what has already been announced, so some notifications are being held back.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이미 알린 내용을 기록하지 못해 일부 알림을 보류하고 있습니다."
+          }
+        }
+      }
+    },
     "Couldn't save settings: %@": {
       "extractionState": "manual",
       "localizations": {

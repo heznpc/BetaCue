@@ -39,6 +39,19 @@ final class Store {
     private var refreshTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
 
+    /// States whose transition the database refused to take.
+    ///
+    /// The transition log is the only thing that makes a notification a one-time event. When
+    /// a write fails, the durable log still holds the *previous* state, so the next poll would
+    /// see the same change again and announce it again, once per poll, for as long as the disk
+    /// stayed broken. When the database never opened at all it holds nothing, so every refresh
+    /// looks like the first one and the app goes permanently silent instead.
+    ///
+    /// This holds only what the database would not take, and an entry is dropped the moment a
+    /// write for that app succeeds. In the healthy case it stays empty and SQLite remains the
+    /// single source of truth.
+    private var unrecordedStates: [String: StateStore.LastState] = [:]
+
     var isConfigured: Bool { client != nil }
 
     /// Polling and notifications outlive any window, so this instance lives as long as the app.
@@ -210,12 +223,22 @@ final class Store {
             // own: the entry would still be there to read, and the next real change would
             // be measured against it.
             guard current.reason?.isObservationFailure != true else { continue }
-            let previous = persistence.lastFingerprint(appID: snapshot.id)
+            // A state the database refused to take wins over what the database still says,
+            // which is by definition out of date.
+            let previous = unrecordedStates[snapshot.id]
+                ?? persistence.lastFingerprint(appID: snapshot.id)
             guard previous?.fingerprint != current.fingerprint else { continue }
 
-            persistence.recordTransition(appID: snapshot.id, from: previous?.state,
-                                         to: current.id, fingerprint: current.fingerprint,
-                                         reason: current.reason)
+            // Recording and notifying are one unit. Announcing a change that was not written
+            // down anywhere means announcing it again on the next poll.
+            if persistence.recordTransition(appID: snapshot.id, from: previous?.state,
+                                            to: current.id, fingerprint: current.fingerprint,
+                                            reason: current.reason) {
+                unrecordedStates[snapshot.id] = nil
+            } else {
+                unrecordedStates[snapshot.id] = StateStore.LastState(
+                    state: current.id, fingerprint: current.fingerprint)
+            }
 
             // Never notify on the first fetch, or every app announces itself at once.
             guard let previousState = previous?.state else { continue }
@@ -280,9 +303,15 @@ final class Store {
     private func notifyExpiringCertificates() {
         for cert in certificates where cert.isExpiringSoon {
             guard let days = cert.daysLeft, days >= 0 else { continue }
-            let previous = persistence.exchangeFeedbackCount(
-                appID: "certificate:\(cert.id)", kind: "expiry-notified", newCount: 1)
-            guard previous == nil else { continue }   // once per certificate
+            // This banner is meant to appear once per certificate, and the stored count is
+            // the only record of whether it already has. If that record is unreadable, a
+            // "first sighting" would be claimed again on every poll — a banner every five
+            // minutes about a certificate expiring in two months. Staying quiet is the
+            // recoverable mistake; the degraded database is reported separately.
+            guard case .exchanged(let previous) = persistence.exchangeFeedbackCount(
+                appID: "certificate:\(cert.id)", kind: "expiry-notified", newCount: 1),
+                  previous == nil
+            else { continue }
             notifier.post(title: String(localized: "Certificate expiring soon"),
                           body: String(localized: "\(cert.name) expires in \(days) days."))
         }

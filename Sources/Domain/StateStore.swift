@@ -296,8 +296,15 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
+    /// Writes a transition and says whether the write landed.
+    ///
+    /// The caller needs the answer. This log is what makes a notification a one-time event,
+    /// so a banner sent for a transition that was never written would be re-announced on
+    /// every poll for as long as the disk stayed broken.
+    @discardableResult
     func recordTransition(appID: String, from: AppStateID?, to: AppStateID,
-                          fingerprint: String, reason: StateReason? = nil, at: Date = Date())
+                          fingerprint: String, reason: StateReason? = nil,
+                          at: Date = Date()) -> Bool
     {
         let ok: Bool = queue.sync {
             var stmt: OpaquePointer?
@@ -326,6 +333,7 @@ final class StateStore: @unchecked Sendable {
         // The transition log is what decides notifications. Losing a write silently is how
         // notifications stopped once already.
         if !ok { degrade(String(localized: "Couldn't record a state change, so notifications may be missed.")) }
+        return ok
     }
 
     struct Transition: Identifiable, Sendable {
@@ -369,32 +377,53 @@ final class StateStore: @unchecked Sendable {
 
     // MARK: - Feedback counts
 
+    /// What an exchange could establish.
+    ///
+    /// "No row yet" and "couldn't read the table" are different answers, and collapsing them
+    /// into `nil` meant a broken database looked like a first sighting on every single poll —
+    /// which for a once-per-certificate notification is a banner every five minutes.
+    enum Exchange: Equatable, Sendable {
+        /// The value stored before this call. `nil` means there was none.
+        case exchanged(previous: Int?)
+        /// The store could not answer, or could not save the new value.
+        case unavailable
+    }
+
     /// Returns the previously seen count and stores the new one. Only the increase notifies.
-    func exchangeFeedbackCount(appID: String, kind: String, newCount: Int) -> Int? {
-        queue.sync {
+    func exchangeFeedbackCount(appID: String, kind: String, newCount: Int) -> Exchange {
+        let outcome: Exchange = queue.sync {
+            guard db != nil else { return .unavailable }
             var previous: Int?
             var stmt: OpaquePointer?
             let select = "SELECT count FROM seen_feedback WHERE app_id = ? AND kind = ?"
-            if sqlite3_prepare_v2(db, select, -1, &stmt, nil) == SQLITE_OK {
-                sqlite3_bind_text(stmt, 1, appID, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_text(stmt, 2, kind, -1, SQLITE_TRANSIENT)
-                if sqlite3_step(stmt) == SQLITE_ROW { previous = Int(sqlite3_column_int(stmt, 0)) }
+            guard sqlite3_prepare_v2(db, select, -1, &stmt, nil) == SQLITE_OK else {
+                return .unavailable
             }
+            sqlite3_bind_text(stmt, 1, appID, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(stmt, 2, kind, -1, SQLITE_TRANSIENT)
+            let step = sqlite3_step(stmt)
+            if step == SQLITE_ROW { previous = Int(sqlite3_column_int(stmt, 0)) }
             sqlite3_finalize(stmt)
+            guard step == SQLITE_ROW || step == SQLITE_DONE else { return .unavailable }
 
             var upsert: OpaquePointer?
             let sql = """
             INSERT INTO seen_feedback (app_id, kind, count) VALUES (?, ?, ?)
             ON CONFLICT(app_id, kind) DO UPDATE SET count = excluded.count
             """
-            if sqlite3_prepare_v2(db, sql, -1, &upsert, nil) == SQLITE_OK {
-                sqlite3_bind_text(upsert, 1, appID, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_text(upsert, 2, kind, -1, SQLITE_TRANSIENT)
-                sqlite3_bind_int(upsert, 3, Int32(newCount))
-                sqlite3_step(upsert)
+            guard sqlite3_prepare_v2(db, sql, -1, &upsert, nil) == SQLITE_OK else {
+                return .unavailable
             }
+            sqlite3_bind_text(upsert, 1, appID, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_text(upsert, 2, kind, -1, SQLITE_TRANSIENT)
+            sqlite3_bind_int(upsert, 3, Int32(newCount))
+            let saved = sqlite3_step(upsert) == SQLITE_DONE
             sqlite3_finalize(upsert)
-            return previous
+            return saved ? .exchanged(previous: previous) : .unavailable
         }
+        if outcome == .unavailable {
+            degrade(String(localized: "Couldn't record what has already been announced, so some notifications are being held back."))
+        }
+        return outcome
     }
 }
