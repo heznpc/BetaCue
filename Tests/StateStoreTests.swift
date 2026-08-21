@@ -81,7 +81,69 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(store.exchangeFeedbackCount(appID: "app-1", kind: "crash", newCount: 5), 3)
     }
 
+    /// Versioned migrations must adopt a pre-versioning database instead of replaying step 0
+    /// or refusing to run.
+    func testAdoptsPreVersioningDatabase() throws {
+        try runRawSQL("""
+        CREATE TABLE state_transitions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            app_id      TEXT NOT NULL,
+            from_state  TEXT,
+            to_state    TEXT NOT NULL,
+            fingerprint TEXT NOT NULL DEFAULT '',
+            at          REAL NOT NULL
+        );
+        """, at: dbURL)
+
+        let store = StateStore(url: dbURL)
+        XCTAssertEqual(store.health, .healthy)
+        store.recordTransition(appID: "app-1", from: nil, to: .noBuild,
+                               fingerprint: "NO_BUILD|-|-", reason: "SEEDED")
+        XCTAssertEqual(store.transitions(appID: "app-1").first?.reason, "SEEDED",
+                       "the reason column has to exist after adoption")
+    }
+
+    /// The reason behind a transition has to survive the round trip, or history collapses
+    /// every same-state change into "details changed".
+    func testTransitionKeepsItsReason() {
+        let store = StateStore(url: dbURL)
+        store.recordTransition(appID: "a", from: .internalTestingReady, to: .actionRequired,
+                               fingerprint: "ACTION_REQUIRED|EXPIRED|b1", reason: "EXPIRED")
+        XCTAssertEqual(store.transitions(appID: "a").first?.reason, "EXPIRED")
+    }
+
+    /// Apps removed from App Store Connect should not linger, but only a complete app list
+    /// is safe to prune against.
+    func testPrunesOnlyOnACompleteAppList() {
+        let store = StateStore(url: dbURL)
+        store.saveSnapshots([snapshot(id: "keep"), snapshot(id: "gone")],
+                            appListWasComplete: true)
+        XCTAssertEqual(store.loadSnapshots().count, 2)
+
+        // Partial list: the missing app may just have failed to load, so keep it.
+        store.saveSnapshots([snapshot(id: "keep")], appListWasComplete: false)
+        XCTAssertEqual(Set(store.loadSnapshots().map(\.id)), ["keep", "gone"])
+
+        // Complete list: it is really gone.
+        store.saveSnapshots([snapshot(id: "keep")], appListWasComplete: true)
+        XCTAssertEqual(store.loadSnapshots().map(\.id), ["keep"])
+    }
+
+    /// A database that cannot be opened has to say so rather than pretending to work.
+    func testUnopenableDatabaseReportsDegraded() throws {
+        let blocked = directory.appendingPathComponent("blocked", isDirectory: true)
+        try FileManager.default.createDirectory(at: blocked, withIntermediateDirectories: true)
+        let store = StateStore(url: blocked)   // a directory is not a database file
+        XCTAssertTrue(store.health.isDegraded)
+        XCTAssertNotNil(store.health.message)
+    }
+
     // MARK: -
+
+    private func snapshot(id: String) -> AppSnapshot {
+        AppSnapshot(id: id, name: id, bundleID: "app.\(id)", groups: [], builds: [],
+                    fetchedAt: Date(timeIntervalSince1970: 1_700_000_000))
+    }
 
     private func runRawSQL(_ sql: String, at url: URL) throws {
         let process = Process()

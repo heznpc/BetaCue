@@ -3,13 +3,13 @@ import SwiftUI
 /// Home. Every app shows identity, current state, blocker, next action and last check. (spec §13)
 struct HomeView: View {
     @Bindable var store: Store
-    @State private var selection: AppSnapshot.ID?
 
     var body: some View {
         NavigationSplitView {
             list
         } detail: {
-            if let selection, let app = store.apps.first(where: { $0.id == selection }) {
+            if let selection = store.selectedAppID,
+               let app = store.apps.first(where: { $0.id == selection }) {
                 AppDetailView(app: app, store: store)
             } else {
                 ContentUnavailableView(String(localized: "Select an app"), systemImage: "sidebar.left")
@@ -33,7 +33,7 @@ struct HomeView: View {
         if !store.isConfigured {
             OnboardingView(store: store)
         } else {
-            List(store.apps, selection: $selection) { app in
+            List(store.apps, selection: $store.selectedAppID) { app in
                 AppRow(app: app, store: store)
                     .tag(app.id)
             }

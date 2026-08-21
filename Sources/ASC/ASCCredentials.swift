@@ -40,23 +40,6 @@ struct ASCCredentials: Equatable, Sendable {
 struct BetaCueConfig: Codable, Equatable, Sendable {
     var keyID: String = ""
     var issuerID: String = ""
-    /// Bundle ID to local project. Used by the upload feature.
-    var projects: [String: ProjectRef] = [:]
-
-    struct ProjectRef: Codable, Equatable, Sendable {
-        var kind: Kind
-        /// Path to the .xcodeproj
-        var projectPath: String
-        var scheme: String
-        /// When CFBundleVersion is a literal (as in Unity exports) it has to be edited directly.
-        var infoPlistPath: String?
-
-        enum Kind: String, Codable, Sendable {
-            case xcodeproj
-            case unityExport
-        }
-    }
-
     var credentials: ASCCredentials? {
         guard !keyID.isEmpty, !issuerID.isEmpty else { return nil }
         return ASCCredentials(keyID: keyID, issuerID: issuerID)

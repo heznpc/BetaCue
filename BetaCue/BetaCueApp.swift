@@ -52,6 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         presentMainWindow()
     }
 
+    /// The user can flip notifications in System Settings while the app runs, so re-read the
+    /// permission whenever the app comes forward rather than trusting the launch-time answer.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        Store.shared.refreshNotificationPermission()
+    }
+
     /// Reopen the window when the Dock icon is clicked and none is visible.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         if !flag { presentMainWindow() }

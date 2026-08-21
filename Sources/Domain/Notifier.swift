@@ -33,6 +33,12 @@ enum Notifier {
         }
     }
 
+    /// Delivery failures, most recent first. The transition is already recorded by the time
+    /// this runs, so a dropped banner is never retried — at minimum it has to be visible.
+    private static let failureLog = FailureLog()
+
+    static var lastDeliveryFailure: String? { failureLog.latest }
+
     static func post(title: String, body: String) {
         let content = UNMutableNotificationContent()
         content.title = title
@@ -40,7 +46,17 @@ enum Notifier {
         content.sound = .default
         let request = UNNotificationRequest(
             identifier: UUID().uuidString, content: content, trigger: nil)
-        UNUserNotificationCenter.current().add(request) { _ in }
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error { failureLog.record(error.localizedDescription) }
+        }
+    }
+
+    private final class FailureLog: @unchecked Sendable {
+        private let lock = NSLock()
+        private var message: String?
+
+        var latest: String? { lock.withLock { message } }
+        func record(_ text: String) { lock.withLock { message = text } }
     }
 
     /// Opens this app's notification pane in System Settings. A denial cannot be undone in-app.

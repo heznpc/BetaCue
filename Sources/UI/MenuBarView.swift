@@ -51,6 +51,9 @@ struct MenuBarView: View {
         let status = app.status
         let state = status.state
         return Button {
+            // Opening the window without selecting the app leaves the user staring at whatever
+            // they last looked at, which is not what they just clicked.
+            store.selectedAppID = app.id
             openWindow(id: "main")
         } label: {
             HStack(spacing: 8) {

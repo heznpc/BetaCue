@@ -9,17 +9,46 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 ///   1. Keep the last snapshot so opening the app shows something before the network answers. (UC-01 ①)
 ///   2. Record transitions to decide notifications and to answer "how long did processing take?".
 final class StateStore: @unchecked Sendable {
+    /// Whether persistence is actually working.
+    ///
+    /// SQLite is not a cache here — the transition log is the sole basis for deciding whether
+    /// to notify. A schema failure once stopped every notification with nothing on screen to
+    /// show for it, so failures are reported rather than swallowed.
+    enum Health: Equatable, Sendable {
+        case healthy
+        case degraded(String)
+
+        var isDegraded: Bool { self != .healthy }
+        var message: String? {
+            if case .degraded(let m) = self { return m }
+            return nil
+        }
+    }
+
     private var db: OpaquePointer?
     private let queue = DispatchQueue(label: "app.betacue.statestore")
+    private var _health: Health = .healthy
+
+    var health: Health { queue.sync { _health } }
+
+    /// Bump this when the schema changes and add a matching step in `migrations`.
+    private static let schemaVersion: Int32 = 2
 
     static let defaultURL = FileManager.default
         .homeDirectoryForCurrentUser
         .appendingPathComponent("Library/Application Support/BetaCue/state.sqlite")
 
     init(url: URL = StateStore.defaultURL) {
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do {
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        } catch {
+            _health = .degraded(String(localized: "Couldn't create the data folder: \(error.localizedDescription)"))
+        }
         guard sqlite3_open(url.path, &db) == SQLITE_OK else {
+            let message = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
+            _health = .degraded(String(localized: "Couldn't open the local database: \(message)"))
+            if db != nil { sqlite3_close(db) }
             db = nil
             return
         }
@@ -28,8 +57,15 @@ final class StateStore: @unchecked Sendable {
 
     deinit { if let db { sqlite3_close(db) } }
 
-    private func migrate() {
-        exec("""
+    // MARK: - Schema
+
+    /// Versioned migrations keyed on `PRAGMA user_version`.
+    ///
+    /// Index i upgrades the database from version i to i+1. Adding a column ad hoc worked for
+    /// one change; anything past that needs an ordered, recorded sequence.
+    private static let migrations: [String] = [
+        // 0 → 1: initial tables
+        """
         CREATE TABLE IF NOT EXISTS snapshots (
             app_id     TEXT PRIMARY KEY,
             payload    BLOB NOT NULL,
@@ -51,20 +87,62 @@ final class StateStore: @unchecked Sendable {
             count  INTEGER NOT NULL,
             PRIMARY KEY (app_id, kind)
         );
-        """)
+        """,
+        // 1 → 2: keep the reason behind a transition, so history can say why rather than
+        // collapsing every same-state change into "details changed".
+        """
+        ALTER TABLE state_transitions ADD COLUMN reason TEXT;
+        """,
+    ]
 
-        // CREATE TABLE IF NOT EXISTS does not add columns to a table that already exists.
-        // Skip this and, after a schema change, INSERT fails silently at prepare time,
-        // no transition is recorded, and notifications stop entirely. That happened once.
-        addColumnIfMissing(table: "state_transitions",
-                           column: "fingerprint",
-                           definition: "TEXT NOT NULL DEFAULT ''")
+    private func migrate() {
+        // Databases created before versioning exist and already carry the v1 tables plus the
+        // fingerprint column, so adopt them at the right version instead of replaying step 0.
+        var version = currentUserVersion()
+        if version == 0 && tableExists("state_transitions") {
+            version = columnExists(table: "state_transitions", column: "fingerprint") ? 1 : 0
+            if version == 0 {
+                // v0 table without fingerprint: bring it forward before entering the sequence.
+                run("ALTER TABLE state_transitions ADD COLUMN fingerprint TEXT NOT NULL DEFAULT '';")
+                version = 1
+            }
+            setUserVersion(version)
+        }
+
+        while version < Self.schemaVersion {
+            let step = Self.migrations[Int(version)]
+            guard run(step) else {
+                _health = .degraded(String(localized: "The local database could not be upgraded, so state changes are not being recorded."))
+                return
+            }
+            version += 1
+            setUserVersion(version)
+        }
     }
 
-    /// No-op when the column exists; otherwise adds it with ALTER TABLE.
-    private func addColumnIfMissing(table: String, column: String, definition: String) {
-        guard !columnExists(table: table, column: column) else { return }
-        exec("ALTER TABLE \(table) ADD COLUMN \(column) \(definition);")
+    private func currentUserVersion() -> Int32 {
+        queue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "PRAGMA user_version;", -1, &stmt, nil) == SQLITE_OK
+            else { return 0 }
+            defer { sqlite3_finalize(stmt) }
+            return sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : 0
+        }
+    }
+
+    private func setUserVersion(_ v: Int32) {
+        _ = run("PRAGMA user_version = \(v);")
+    }
+
+    private func tableExists(_ name: String) -> Bool {
+        queue.sync {
+            var stmt: OpaquePointer?
+            let sql = "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?;"
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
+            defer { sqlite3_finalize(stmt) }
+            sqlite3_bind_text(stmt, 1, name, -1, SQLITE_TRANSIENT)
+            return sqlite3_step(stmt) == SQLITE_ROW
+        }
     }
 
     private func columnExists(table: String, column: String) -> Bool {
@@ -82,15 +160,64 @@ final class StateStore: @unchecked Sendable {
         }
     }
 
-    private func exec(_ sql: String) {
-        queue.sync { sqlite3_exec(db, sql, nil, nil, nil) }
+    /// Runs SQL and reports whether it worked, instead of discarding the result.
+    @discardableResult
+    private func run(_ sql: String) -> Bool {
+        queue.sync {
+            guard db != nil else { return false }
+            var error: UnsafeMutablePointer<CChar>?
+            let ok = sqlite3_exec(db, sql, nil, nil, &error) == SQLITE_OK
+            if let error { sqlite3_free(error) }
+            return ok
+        }
+    }
+
+    /// Records a failure that the user should know about.
+    private func degrade(_ message: String) {
+        queue.sync { if _health == .healthy { _health = .degraded(message) } }
     }
 
     // MARK: - Snapshots
 
-    func saveSnapshots(_ snapshots: [AppSnapshot]) {
+    /// Upserts the given snapshots and removes rows for apps that no longer exist.
+    ///
+    /// `appListWasComplete` guards the prune: deleting on a partial list would drop apps that
+    /// simply failed to load this time.
+    func saveSnapshots(_ snapshots: [AppSnapshot], appListWasComplete: Bool = false) {
+        upsert(snapshots)
+        guard appListWasComplete else { return }
+        prune(keeping: Set(snapshots.map(\.id)))
+    }
+
+    private func prune(keeping ids: Set<String>) {
+        queue.sync {
+            var stmt: OpaquePointer?
+            guard sqlite3_prepare_v2(db, "SELECT app_id FROM snapshots", -1, &stmt, nil) == SQLITE_OK
+            else { return }
+            var stale: [String] = []
+            while sqlite3_step(stmt) == SQLITE_ROW {
+                if let raw = sqlite3_column_text(stmt, 0) {
+                    let id = String(cString: raw)
+                    if !ids.contains(id) { stale.append(id) }
+                }
+            }
+            sqlite3_finalize(stmt)
+
+            for id in stale {
+                var del: OpaquePointer?
+                guard sqlite3_prepare_v2(db, "DELETE FROM snapshots WHERE app_id = ?", -1, &del, nil)
+                        == SQLITE_OK else { continue }
+                sqlite3_bind_text(del, 1, id, -1, SQLITE_TRANSIENT)
+                sqlite3_step(del)
+                sqlite3_finalize(del)
+            }
+        }
+    }
+
+    private func upsert(_ snapshots: [AppSnapshot]) {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .secondsSince1970
+        var failed = false
         queue.sync {
             sqlite3_exec(db, "BEGIN", nil, nil, nil)
             defer { sqlite3_exec(db, "COMMIT", nil, nil, nil) }
@@ -102,16 +229,20 @@ final class StateStore: @unchecked Sendable {
                 ON CONFLICT(app_id) DO UPDATE SET payload = excluded.payload,
                                                   fetched_at = excluded.fetched_at
                 """
-                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { continue }
+                guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else {
+                    failed = true
+                    continue
+                }
                 sqlite3_bind_text(stmt, 1, snapshot.id, -1, SQLITE_TRANSIENT)
                 _ = payload.withUnsafeBytes {
                     sqlite3_bind_blob(stmt, 2, $0.baseAddress, Int32(payload.count), SQLITE_TRANSIENT)
                 }
                 sqlite3_bind_double(stmt, 3, snapshot.fetchedAt.timeIntervalSince1970)
-                sqlite3_step(stmt)
+                if sqlite3_step(stmt) != SQLITE_DONE { failed = true }
                 sqlite3_finalize(stmt)
             }
         }
+        if failed { degrade(String(localized: "Couldn't save the latest state locally.")) }
     }
 
     func loadSnapshots() -> [AppSnapshot] {
@@ -166,15 +297,15 @@ final class StateStore: @unchecked Sendable {
     }
 
     func recordTransition(appID: String, from: AppStateID?, to: AppStateID,
-                          fingerprint: String, at: Date = Date())
+                          fingerprint: String, reason: String? = nil, at: Date = Date())
     {
-        queue.sync {
+        let ok: Bool = queue.sync {
             var stmt: OpaquePointer?
             let sql = """
-            INSERT INTO state_transitions (app_id, from_state, to_state, fingerprint, at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO state_transitions (app_id, from_state, to_state, fingerprint, reason, at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """
-            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return }
+            guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return false }
             defer { sqlite3_finalize(stmt) }
             sqlite3_bind_text(stmt, 1, appID, -1, SQLITE_TRANSIENT)
             if let from {
@@ -184,15 +315,25 @@ final class StateStore: @unchecked Sendable {
             }
             sqlite3_bind_text(stmt, 3, to.rawValue, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 4, fingerprint, -1, SQLITE_TRANSIENT)
-            sqlite3_bind_double(stmt, 5, at.timeIntervalSince1970)
-            sqlite3_step(stmt)
+            if let reason {
+                sqlite3_bind_text(stmt, 5, reason, -1, SQLITE_TRANSIENT)
+            } else {
+                sqlite3_bind_null(stmt, 5)
+            }
+            sqlite3_bind_double(stmt, 6, at.timeIntervalSince1970)
+            return sqlite3_step(stmt) == SQLITE_DONE
         }
+        // The transition log is what decides notifications. Losing a write silently is how
+        // notifications stopped once already.
+        if !ok { degrade(String(localized: "Couldn't record a state change, so notifications may be missed.")) }
     }
 
     struct Transition: Identifiable, Sendable {
         var id: Int
         var from: AppStateID?
         var to: AppStateID
+        /// Why the state changed, when the state ID alone doesn't say.
+        var reason: String?
         var at: Date
     }
 
@@ -200,7 +341,7 @@ final class StateStore: @unchecked Sendable {
         queue.sync {
             var stmt: OpaquePointer?
             let sql = """
-            SELECT id, from_state, to_state, at FROM state_transitions
+            SELECT id, from_state, to_state, at, reason FROM state_transitions
             WHERE app_id = ? ORDER BY at DESC LIMIT ?
             """
             guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK else { return [] }
@@ -213,8 +354,9 @@ final class StateStore: @unchecked Sendable {
                 let from = sqlite3_column_text(stmt, 1).map { AppStateID(rawValue: String(cString: $0)) } ?? nil
                 guard let toRaw = sqlite3_column_text(stmt, 2),
                       let to = AppStateID(rawValue: String(cString: toRaw)) else { continue }
+                let reason = sqlite3_column_text(stmt, 4).map { String(cString: $0) }
                 result.append(Transition(
-                    id: Int(sqlite3_column_int(stmt, 0)), from: from, to: to,
+                    id: Int(sqlite3_column_int(stmt, 0)), from: from, to: to, reason: reason,
                     at: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 3))))
             }
             return result

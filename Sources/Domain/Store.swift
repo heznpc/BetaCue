@@ -17,6 +17,12 @@ final class Store {
     /// Notification permission. A denial means no state change can be announced, so the UI says so.
     private(set) var notificationPermission: Notifier.Permission = .unknown
 
+    /// Which app the window is showing. Owned here so the menu bar can steer it.
+    var selectedAppID: String?
+
+    /// Whether the local database is working. Its failure silences notifications.
+    var persistenceHealth: StateStore.Health { persistence.health }
+
     var config: BetaCueConfig {
         didSet { client = config.credentials.map { ASCClient(credentials: $0) } }
     }
@@ -47,6 +53,13 @@ final class Store {
         if apps.contains(where: { $0.status.state.id == .buildProcessing }) { return 60 }
         if apps.contains(where: { $0.status.state.severity == .warning }) { return 300 }
         return apps.isEmpty ? 300 : 900
+    }
+
+    /// Re-reads the permission. The user can flip it in System Settings while the app runs.
+    func refreshNotificationPermission() {
+        Task { [weak self] in
+            self?.notificationPermission = await Notifier.currentPermission()
+        }
     }
 
     /// Checks or requests notification permission and remembers the answer.
@@ -91,8 +104,9 @@ final class Store {
         defer { isRefreshing = false }
 
         do {
-            let appList: [ASCResource<AppAttributes>] =
-                try await client.getAllPages("/v1/apps?limit=200")
+            let appPage: PagedResult<ASCResource<AppAttributes>> =
+                try await client.getAllPagesResult("/v1/apps?limit=200")
+            let appList = appPage.values
 
             // One app failing must not block the rest; the failed one keeps its last state.
             var collected: [AppSnapshot] = []
@@ -122,7 +136,8 @@ final class Store {
             collected = Self.sorted(collected)
 
             detectAndNotify(collected)
-            persistence.saveSnapshots(collected)
+            persistence.saveSnapshots(collected,
+                                      appListWasComplete: failedNames.isEmpty && appPage.isComplete)
             apps = collected
 
             lastRefresh = Date()
@@ -163,54 +178,68 @@ final class Store {
             // reads as "unknown", and announcing that as a change would turn every blip into
             // a notification. Record only what was read completely.
             guard !snapshot.isPartial else { continue }
+
             let current = snapshot.status.state
             let previous = persistence.lastFingerprint(appID: snapshot.id)
             guard previous?.fingerprint != current.fingerprint else { continue }
 
             persistence.recordTransition(appID: snapshot.id, from: previous?.state,
-                                         to: current.id, fingerprint: current.fingerprint)
+                                         to: current.id, fingerprint: current.fingerprint,
+                                         reason: current.reason)
 
             // Never notify on the first fetch, or every app announces itself at once.
             guard let previousState = previous?.state else { continue }
+            guard shouldNotify(leaving: previousState, entering: current) else { continue }
             guard let message = notificationText(app: snapshot, from: previousState, to: current)
             else { continue }
             Notifier.post(title: message.title, body: message.body)
         }
     }
 
-    /// Not every change deserves a banner. Only these transitions do. (spec §12)
+    /// The state definitions own the notification policy. (spec §16)
+    ///
+    /// Keeping a second policy in the transition table below meant a state could declare
+    /// `notifyWhenLeaving` while nothing ever fired, and the test asserting the declaration
+    /// would still pass. The declaration decides; the table only supplies wording.
+    private func shouldNotify(leaving previous: AppStateID, entering current: AppStateDefinition)
+        -> Bool
+    {
+        if current.notificationPolicy == .notifyWhenEntering { return true }
+        return AppStateDefinition.make(previous).notificationPolicy == .notifyWhenLeaving
+    }
+
+    /// Wording for a transition worth announcing. Returning nil means there is nothing useful
+    /// to say, even though the policy allows a notification.
     private func notificationText(app: AppSnapshot, from: AppStateID, to: AppStateDefinition)
         -> (title: String, body: String)?
     {
         let version = app.latestBuild?.displayVersion ?? ""
 
-        switch (from, to.id) {
-        case (.buildProcessing, .internalTestingReady),
-             (.buildProcessing, .externalTestingReady),
-             (.buildProcessing, .externalReviewRequired):
+        switch to.id {
+        case .internalTestingReady, .externalTestingReady, .externalReviewRequired:
+            guard from == .buildProcessing || from == .externalReviewPending else { return nil }
+            if from == .externalReviewPending && to.id == .externalTestingReady {
+                return (String(localized: "\(app.name) approved for external testing"),
+                        String(localized: "You can now distribute to external testers."))
+            }
             return (String(localized: "\(app.name) is ready to test"),
-                    version.isEmpty ? String(localized: "You can install it from TestFlight on your iPhone.")
-                                    : String(localized: "\(version) — install it from TestFlight on your iPhone."))
+                    version.isEmpty
+                        ? String(localized: "You can install it from TestFlight on your iPhone.")
+                        : String(localized: "\(version) — install it from TestFlight on your iPhone."))
 
-        case (.buildProcessing, .buildReadyNotDistributed):
+        case .buildReadyNotDistributed:
             return (String(localized: "\(app.name) reaches nobody"), to.blocker ?? to.description)
 
-        case (_, .buildInvalid) where app.status.testable != nil:
-            let alive = app.status.testable?.displayVersion ?? ""
-            return (String(localized: "\(app.name) new build rejected"), String(localized: "\(alive) is still testable."))
-
-        case (.externalReviewPending, .externalTestingReady):
-            return (String(localized: "\(app.name) approved for external testing"), String(localized: "You can now distribute to external testers."))
-
-        case (_, .buildInvalid):
+        case .buildInvalid:
+            guard app.status.testable == nil else {
+                let alive = app.status.testable?.displayVersion ?? ""
+                return (String(localized: "\(app.name) new build rejected"),
+                        String(localized: "\(alive) is still testable."))
+            }
             return (String(localized: "\(app.name) build rejected"), to.description)
 
-        case (_, .actionRequired), (_, .unknown):
-            // Only when a blocker appears that was not there before.
+        case .actionRequired, .unknown:
             return (String(localized: "\(app.name) needs attention"), to.blocker ?? to.description)
-
-        case (_, .buildReadyNotDistributed):
-            return (String(localized: "\(app.name) reaches nobody"), to.blocker ?? to.description)
 
         default:
             return nil

@@ -119,7 +119,20 @@ struct AppDetailView: View {
                     let isOn = assigned.contains(group.id)
                     LabeledContent {
                         HStack(spacing: 6) {
-                            if group.publicLinkEnabled {
+                            if let link = group.publicLink {
+                                // One link per group. Showing only the first one in the app
+                                // could show a link belonging to a group this build never
+                                // reached.
+                                Button {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(link, forType: .string)
+                                } label: {
+                                    Image(systemName: "link")
+                                }
+                                .buttonStyle(.borderless)
+                                .foregroundStyle(.blue)
+                                .help(String(localized: "Copy public link"))
+                            } else if group.publicLinkEnabled {
                                 Image(systemName: "link").foregroundStyle(.blue)
                             }
                             Text(testerLabel(for: group))
@@ -143,19 +156,7 @@ struct AppDetailView: View {
                      + String(localized: "↻ means new builds distribute automatically; the link icon means a public link."))
                     .font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
-                if let link = app.groups.compactMap(\.publicLink).first {
-                    HStack(spacing: 6) {
-                        Text(link).font(.caption.monospaced()).lineLimit(1).truncationMode(.middle)
-                        Button {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(link, forType: .string)
-                        } label: {
-                            Image(systemName: "doc.on.doc")
-                        }
-                        .buttonStyle(.borderless)
-                        .help(String(localized: "Copy public link"))
-                    }
-                }
+
             }
             if let count = app.latestBuild?.individualTesterCount, count > 0 {
                 LabeledContent(String(localized: "Individual invites"), value: String(localized: "\(count) people")).font(.callout)
@@ -207,9 +208,10 @@ struct AppDetailView: View {
     /// The state ID can stay put while the fingerprint moves — a different cause or build.
     /// Rendering that as "X → X" just confuses the reader.
     private func describe(_ entry: StateStore.Transition) -> String {
-        guard let from = entry.from else { return String(localized: "first seen · \(label(for: entry.to))") }
-        guard from != entry.to else { return String(localized: "\(label(for: entry.to)) · details changed") }
-        return "\(label(for: from)) → \(label(for: entry.to))"
+        let target = entry.reason.map { "\(label(for: entry.to)) (\($0))" } ?? label(for: entry.to)
+        guard let from = entry.from else { return String(localized: "first seen · \(target)") }
+        guard from != entry.to else { return target }
+        return "\(label(for: from)) → \(target)"
     }
 
     private func label(for id: AppStateID) -> String {

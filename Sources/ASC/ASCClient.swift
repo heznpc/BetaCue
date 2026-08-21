@@ -1,6 +1,12 @@
 import CryptoKit
 import Foundation
 
+/// A list that knows whether it is the whole list.
+struct PagedResult<Element: Sendable>: Sendable {
+    var values: [Element]
+    var isComplete: Bool
+}
+
 enum ASCError: LocalizedError, Equatable {
     case notConfigured
     case keyFileUnreadable(String)
@@ -106,6 +112,16 @@ actor ASCClient {
     func getAllPages<T: Decodable & Sendable>(
         _ path: String, as type: T.Type = T.self, maxPages: Int = 20
     ) async throws -> [ASCResource<T>] where T: Sendable {
+        try await getAllPagesResult(path, as: type, maxPages: maxPages).values
+    }
+
+    /// Like `getAllPages`, but says whether the ceiling cut the results short.
+    ///
+    /// Returning a silently truncated array let callers treat a partial list as complete —
+    /// the same class of mistake as treating a failed fetch as an empty one.
+    func getAllPagesResult<T: Decodable & Sendable>(
+        _ path: String, as type: T.Type = T.self, maxPages: Int = 20
+    ) async throws -> PagedResult<ASCResource<T>> {
         var collected: [ASCResource<T>] = []
         var next: String? = path
         var pages = 0
@@ -116,11 +132,13 @@ actor ASCClient {
             next = page.links?.next
             pages += 1
         }
-        return collected
+        return PagedResult(values: collected, isComplete: next == nil)
     }
 
     /// Every page of a relationship listing.
-    func getAllRelationshipIDs(_ path: String, maxPages: Int = 20) async throws -> [String] {
+    func getAllRelationshipIDs(_ path: String, maxPages: Int = 20) async throws
+        -> PagedResult<String>
+    {
         var collected: [String] = []
         var next: String? = path
         var pages = 0
@@ -131,7 +149,7 @@ actor ASCClient {
             next = page.links?.next
             pages += 1
         }
-        return collected
+        return PagedResult(values: collected, isComplete: next == nil)
     }
 
     /// For secondary fetches that must not take the whole refresh down. Errors collapse to nil.

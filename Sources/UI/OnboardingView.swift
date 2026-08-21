@@ -6,6 +6,7 @@ struct OnboardingView: View {
     @State private var keyID: String = ""
     @State private var issuerID: String = ""
     @State private var saveError: String?
+    @State private var isVerifying = false
 
     private var discovered: [String] { ASCCredentials.discoverKeyIDs() }
 
@@ -51,9 +52,12 @@ struct OnboardingView: View {
                 Text(saveError).font(.callout).foregroundStyle(.red)
             }
 
-            Button(String(localized: "Connect")) { connect() }
-                .buttonStyle(.borderedProminent)
-                .disabled(keyID.isEmpty || issuerID.trimmed.isEmpty)
+            HStack(spacing: 9) {
+                Button(String(localized: "Connect")) { connect() }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(keyID.isEmpty || issuerID.trimmed.isEmpty || isVerifying)
+                if isVerifying { ProgressView().controlSize(.small) }
+            }
 
             Spacer()
         }
@@ -66,17 +70,31 @@ struct OnboardingView: View {
         }
     }
 
+    /// Verifies the credentials against the API before saving them.
+    ///
+    /// Saving first meant a wrong Issuer ID still flipped the app into "configured" and the
+    /// onboarding screen disappeared, leaving a 401 with nowhere to correct it.
     private func connect() {
         var config = store.config
         config.keyID = keyID
         config.issuerID = issuerID.trimmed
-        do {
-            try config.save()
-            store.config = config
-            saveError = nil
-            store.refresh()
-        } catch {
-            saveError = String(localized: "Couldn't save settings: \(error.localizedDescription)")
+        guard let credentials = config.credentials else { return }
+
+        isVerifying = true
+        saveError = nil
+        Task {
+            defer { isVerifying = false }
+            do {
+                let probe = ASCClient(credentials: credentials)
+                let _: ASCList<AppAttributes> = try await probe.get("/v1/apps?limit=1")
+                try config.save()
+                store.config = config
+                store.refresh()
+            } catch let error as ASCError {
+                saveError = error.localizedDescription
+            } catch {
+                saveError = String(localized: "Couldn't save settings: \(error.localizedDescription)")
+            }
         }
     }
 }

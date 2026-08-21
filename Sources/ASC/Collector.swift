@@ -73,20 +73,21 @@ enum Collector {
         await withTaskGroup(of: (GroupSnapshot, String?).self) { tg in
             for g in list {
                 tg.addTask {
-                    // Counting one page truncates at 200 and misjudges the group as reaching nobody.
-                    let testers = try? await client.getAllPages(
-                        "/v1/betaGroups/\(g.id)/betaTesters?limit=\(testerLimit)",
-                        as: BetaTesterAttributes.self)
+                    // Only the count is needed, so read relationship IDs rather than whole
+                    // tester objects with names and email addresses.
+                    let testers = try? await client.getAllRelationshipIDs(
+                        "/v1/betaGroups/\(g.id)/relationships/betaTesters?limit=\(testerLimit)")
                     let snapshot = GroupSnapshot(
                         id: g.id,
                         name: g.attributes.name,
                         isInternal: g.attributes.isInternalGroup,
-                        testerCount: testers?.count,
+                        testerCount: (testers?.isComplete ?? false) ? testers?.values.count : nil,
                         autoDistributes: g.attributes.hasAccessToAllBuilds ?? false,
                         publicLinkEnabled: g.attributes.publicLinkEnabled ?? false,
                         publicLink: g.attributes.publicLink)
-                    let problem = testers == nil
-                        ? String(localized: "Couldn't read testers for the '\(g.attributes.name)' group.") : nil
+                    let problem = (testers?.isComplete ?? false)
+                        ? nil
+                        : String(localized: "Couldn't read testers for the '\(g.attributes.name)' group.")
                     return (snapshot, problem)
                 }
             }
@@ -118,7 +119,7 @@ enum Collector {
                         client.getOrNil("/v1/builds/\(b.id)/buildBetaDetail")
                     async let preRelease: ASCSingle<PreReleaseVersionAttributes>? =
                         client.getOrNil("/v1/builds/\(b.id)/preReleaseVersion")
-                    async let individuals: [String]? =
+                    async let individuals: PagedResult<String>? =
                         try? client.getAllRelationshipIDs(
                             "/v1/builds/\(b.id)/relationships/individualTesters?limit=\(testerLimit)")
                     let (d, pre, ind) = await (detail, preRelease, individuals)
@@ -136,7 +137,7 @@ enum Collector {
                         expiresAt: b.attributes.expirationDate,
                         isExpired: b.attributes.expired ?? false,
                         assignedGroupIDs: nil,
-                        individualTesterCount: ind?.count)
+                        individualTesterCount: (ind?.isComplete ?? false) ? ind?.values.count : nil)
                     let problem = d == nil
                         ? String(localized: "Couldn't read distribution state for build \(b.attributes.version ?? b.id).") : nil
                     return (index, snapshot, problem)
@@ -159,12 +160,13 @@ enum Collector {
         await withTaskGroup(of: (String, Set<String>?, String?).self) { tg in
             for group in groups {
                 tg.addTask {
-                    guard let ids = try? await client.getAllRelationshipIDs(
-                        "/v1/betaGroups/\(group.id)/relationships/builds?limit=200")
+                    guard let page = try? await client.getAllRelationshipIDs(
+                        "/v1/betaGroups/\(group.id)/relationships/builds?limit=200"),
+                          page.isComplete
                     else {
                         return (group.id, nil, String(localized: "Couldn't read distributed builds for the '\(group.name)' group."))
                     }
-                    return (group.id, Set(ids), nil)
+                    return (group.id, Set(page.values), nil)
                 }
             }
             for await (id, ids, problem) in tg {

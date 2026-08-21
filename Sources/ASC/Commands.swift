@@ -16,15 +16,6 @@ enum Commands {
         try await client.postNoContent("/v1/builds/\(buildID)/relationships/betaGroups", body: body)
     }
 
-    static func remove(build buildID: String, fromGroups groupIDs: [String],
-                       using client: ASCClient) async throws
-    {
-        guard !groupIDs.isEmpty else { return }
-        let body = RelationshipBody(
-            data: groupIDs.map { RelationshipBody.Ref(type: "betaGroups", id: $0) })
-        try await client.deleteNoContent("/v1/builds/\(buildID)/relationships/betaGroups", body: body)
-    }
-
     private struct RelationshipBody: Encodable {
         struct Ref: Encodable {
             var type: String
