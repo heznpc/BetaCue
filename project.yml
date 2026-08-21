@@ -44,6 +44,9 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.betacue.tests
         GENERATE_INFOPLIST_FILE: YES
+        # Match the app target's strictness. Without this the tests compile locally under
+        # looser rules and only fail on the runner, which has happened twice.
+        SWIFT_STRICT_CONCURRENCY: complete
         # xcodegen derives TEST_HOST from the target name, which differs from PRODUCT_NAME.
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/BetaCue.app/Contents/MacOS/BetaCue"
         BUNDLE_LOADER: "$(TEST_HOST)"

@@ -11,7 +11,9 @@ final class StoreTests: XCTestCase {
     private var config: BetaCueConfig!
     private var notifier: FakeNotifier!
 
-    override func setUpWithError() throws {
+    // The throwing overrides are nonisolated, so a @MainActor class cannot touch its own
+    // properties from them. The async variants inherit the class's isolation.
+    override func setUp() async throws {
         directory = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("betacue-store-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -22,7 +24,7 @@ final class StoreTests: XCTestCase {
         MockURLProtocol.reset()
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         MockURLProtocol.reset()
         try? FileManager.default.removeItem(at: directory)
     }
