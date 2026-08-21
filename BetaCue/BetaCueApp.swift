@@ -47,35 +47,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // State tracking and notifications must run even if the window is never opened. (spec §12)
         Store.shared.prepareNotifications()
         Store.shared.startPolling()
-
         NSApp.activate(ignoringOtherApps: true)
-        presentMainWindow()
     }
 
     /// The user can flip notifications in System Settings while the app runs, so re-read the
     /// permission whenever the app comes forward rather than trusting the launch-time answer.
     func applicationDidBecomeActive(_ notification: Notification) {
         Store.shared.refreshNotificationPermission()
-    }
-
-    /// Reopen the window when the Dock icon is clicked and none is visible.
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag { presentMainWindow() }
-        return true
-    }
-
-    /// SwiftUI may create the window after launch finishes, so retry briefly instead of giving up.
-    ///
-    /// `NSApp.windows` also contains the menu-bar popover panel, so filter out `NSPanel`
-    /// to avoid fronting the wrong thing.
-    private func presentMainWindow(attemptsLeft: Int = 20) {
-        if let window = NSApp.windows.first(where: { $0.canBecomeMain && !($0 is NSPanel) }) {
-            window.makeKeyAndOrderFront(nil)
-            return
-        }
-        guard attemptsLeft > 0 else { return }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.presentMainWindow(attemptsLeft: attemptsLeft - 1)
-        }
     }
 }
