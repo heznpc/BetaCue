@@ -40,7 +40,7 @@ final class ReliabilityTests: XCTestCase {
             groups: [group()],
             builds: [build(internalState: nil, externalState: nil, betaStateIsKnown: false)])
         XCTAssertEqual(status.state.id, .unknown)
-        XCTAssertEqual(status.state.reason, "BETA_STATE_UNREAD")
+        XCTAssertEqual(status.state.reason, .betaStateUnread)
         XCTAssertNil(status.testable, "an unread beta state cannot be called installable")
     }
 
@@ -49,7 +49,7 @@ final class ReliabilityTests: XCTestCase {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(assignedGroupIDs: nil)])
         XCTAssertEqual(status.state.id, .unknown)
-        XCTAssertEqual(status.state.reason, "AUDIENCE_UNREAD")
+        XCTAssertEqual(status.state.reason, .audienceUnread)
     }
 
     /// P0-1. A failed tester fetch used to count as zero testers.
@@ -89,7 +89,7 @@ final class ReliabilityTests: XCTestCase {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(internalState: "PROCESSING_EXCEPTION")])
         XCTAssertEqual(status.state.id, .actionRequired)
-        XCTAssertEqual(status.state.reason, "PROCESSING_EXCEPTION")
+        XCTAssertEqual(status.state.reason, .processingException)
         XCTAssertNil(status.testable)
     }
 
@@ -122,7 +122,7 @@ final class ReliabilityTests: XCTestCase {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(internalState: "READY_FOR_BETA_TESTING")])
         XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
-        XCTAssertEqual(status.state.reason, "NOT_YET_LIVE")
+        XCTAssertEqual(status.state.reason, .notYetLive)
         XCTAssertNil(status.testable)
     }
 

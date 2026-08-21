@@ -237,7 +237,7 @@ struct AppDetailView: View {
             VStack(alignment: .leading, spacing: 5) {
                 LabeledContent(String(localized: "State ID"), value: app.status.state.id.rawValue)
                 if let reason = app.status.state.reason {
-                    LabeledContent(String(localized: "Reason code"), value: reason)
+                    LabeledContent(String(localized: "Reason code"), value: reason.rawValue)
                 }
                 LabeledContent("Bundle ID", value: app.bundleID)
                 ForEach(app.status.state.rawEvidence.sorted(by: { $0.key < $1.key }), id: \.key) { key, value in

@@ -203,6 +203,13 @@ final class Store {
             guard !snapshot.isPartial else { continue }
 
             let current = snapshot.status.state
+            // Two different events wear the UNKNOWN badge. "Apple sent a value this version
+            // has never seen" is news. "A fetch came back empty" is our own blind spot, and
+            // writing it down produces READY → UNKNOWN → READY round trips in the timeline
+            // that describe the network rather than the app. Silence is not enough on its
+            // own: the entry would still be there to read, and the next real change would
+            // be measured against it.
+            guard current.reason?.isObservationFailure != true else { continue }
             let previous = persistence.lastFingerprint(appID: snapshot.id)
             guard previous?.fingerprint != current.fingerprint else { continue }
 

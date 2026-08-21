@@ -17,6 +17,49 @@ enum AppStateID: String, Codable, Sendable, CaseIterable {
     case unknown = "UNKNOWN"
 }
 
+/// Why a state is what it is, when the state ID alone doesn't say.
+///
+/// This was a free-form string, and that made one policy question unanswerable: `UNKNOWN`
+/// covers both "Apple sent a value this version has never seen" and "a fetch came back
+/// empty", which are opposite kinds of event wearing the same badge. The first is news about
+/// the app. The second is a blind spot of our own, and announcing it turns every network
+/// blip into "needs attention". A closed set puts that distinction in the type instead of in
+/// whoever remembers to check the spelling of a string.
+enum StateReason: String, Codable, Sendable, CaseIterable {
+    // Apple reached a verdict about the build.
+    case rejectedByApple = "REJECTED_BY_APPLE"
+    case missingExportCompliance = "MISSING_EXPORT_COMPLIANCE"
+    case expired = "EXPIRED"
+    case betaRejected = "BETA_REJECTED"
+    case processingException = "PROCESSING_EXCEPTION"
+
+    // The build is fine and reaches nobody. These say which way.
+    case noGroups = "NO_GROUPS"
+    case buildNotAssigned = "BUILD_NOT_ASSIGNED"
+    case groupsEmpty = "GROUPS_EMPTY"
+    case notYetLive = "NOT_YET_LIVE"
+
+    // Apple sent a value this version does not recognize. Worth telling someone about.
+    case unrecognizedProcessingState = "UNRECOGNIZED_PROCESSING_STATE"
+    case unrecognizedInternalState = "UNRECOGNIZED_INTERNAL_STATE"
+    case unrecognizedExternalState = "UNRECOGNIZED_EXTERNAL_STATE"
+
+    // A fetch failed or was truncated. Says nothing about the app.
+    case betaStateUnread = "BETA_STATE_UNREAD"
+    case audienceUnread = "AUDIENCE_UNREAD"
+
+    /// Does this reason describe a failed observation rather than a fact about the app?
+    ///
+    /// Everything downstream keys on this: no banner, and no entry in the timeline either.
+    /// READY → UNKNOWN → READY round trips describe the network, not the app.
+    var isObservationFailure: Bool {
+        switch self {
+        case .betaStateUnread, .audienceUnread: return true
+        default: return false
+        }
+    }
+}
+
 enum Severity: Int, Codable, Comparable, Sendable {
     case warning = 0, info = 1, success = 2, idle = 3
 
@@ -83,7 +126,7 @@ struct AppStateDefinition: Sendable, Equatable {
     ///
     /// `ACTION_REQUIRED` alone covers missing export compliance, expiry and beta rejection.
     /// Without this a change of cause looks like no transition at all, and nothing notifies.
-    var reason: String?
+    var reason: StateReason?
     var severity: Severity
     var headline: String
     var description: String
@@ -112,7 +155,8 @@ struct AppStateDefinition: Sendable, Equatable {
 
     /// Fingerprint for transition detection. The state ID alone misses a change of cause.
     var fingerprint: String {
-        [id.rawValue, reason ?? "-", rawEvidence["buildID"] ?? "-"].joined(separator: "|")
+        [id.rawValue, reason?.rawValue ?? "-", rawEvidence["buildID"] ?? "-"]
+            .joined(separator: "|")
     }
 
     static func == (a: AppStateDefinition, b: AppStateDefinition) -> Bool {
@@ -125,10 +169,13 @@ struct AppStateDefinition: Sendable, Equatable {
 extension AppStateDefinition {
     /// Builds a state definition from evidence. Every user-facing string lives here and nowhere else.
     static func make(_ id: AppStateID, evidence: [String: String] = [:],
-                     reason: String? = nil, detail: String? = nil) -> AppStateDefinition
+                     reason: StateReason? = nil, detail: String? = nil) -> AppStateDefinition
     {
         var made = build(id, evidence: evidence, detail: detail)
         made.reason = reason
+        // A state that only means "the fetch failed" is not something to wake anyone for.
+        // The policy belongs to the reason, not to the state that happens to carry it.
+        if reason?.isObservationFailure == true { made.notificationPolicy = .silent }
         return made
     }
 

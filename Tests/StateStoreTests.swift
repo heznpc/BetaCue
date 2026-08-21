@@ -98,8 +98,8 @@ final class StateStoreTests: XCTestCase {
         let store = StateStore(url: dbURL)
         XCTAssertEqual(store.health, .healthy)
         store.recordTransition(appID: "app-1", from: nil, to: .noBuild,
-                               fingerprint: "NO_BUILD|-|-", reason: "SEEDED")
-        XCTAssertEqual(store.transitions(appID: "app-1").first?.reason, "SEEDED",
+                               fingerprint: "NO_BUILD|-|-", reason: .expired)
+        XCTAssertEqual(store.transitions(appID: "app-1").first?.reason, "EXPIRED",
                        "the reason column has to exist after adoption")
     }
 
@@ -108,7 +108,7 @@ final class StateStoreTests: XCTestCase {
     func testTransitionKeepsItsReason() {
         let store = StateStore(url: dbURL)
         store.recordTransition(appID: "a", from: .internalTestingReady, to: .actionRequired,
-                               fingerprint: "ACTION_REQUIRED|EXPIRED|b1", reason: "EXPIRED")
+                               fingerprint: "ACTION_REQUIRED|EXPIRED|b1", reason: .expired)
         XCTAssertEqual(store.transitions(appID: "a").first?.reason, "EXPIRED")
     }
 

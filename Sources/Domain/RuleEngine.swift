@@ -67,15 +67,17 @@ enum RuleEngine {
         evidence["individualTesters"] = latest.individualTesterCount.map(String.init) ?? "unread"
         evidence["betaStateIsKnown"] = String(latest.betaStateIsKnown)
 
-        // A single unrecognized value is enough to stop guessing.
+        // A single unrecognized value is enough to stop guessing. Saying *which* value is
+        // what separates "Apple shipped a new enum" from "our fetch came back empty", and
+        // only the first of those is worth a notification.
         guard knownProcessingStates.contains(latest.processingState) else {
-            return .make(.unknown, evidence: evidence)
+            return .make(.unknown, evidence: evidence, reason: .unrecognizedProcessingState)
         }
         if let s = latest.internalState, !knownInternalStates.contains(s) {
-            return .make(.unknown, evidence: evidence)
+            return .make(.unknown, evidence: evidence, reason: .unrecognizedInternalState)
         }
         if let s = latest.externalState, !knownExternalStates.contains(s) {
-            return .make(.unknown, evidence: evidence)
+            return .make(.unknown, evidence: evidence, reason: .unrecognizedExternalState)
         }
 
         switch latest.processingState {
@@ -83,42 +85,42 @@ enum RuleEngine {
             return .make(.buildProcessing, evidence: evidence,
                          detail: processingDetail(since: latest.uploadedAt, now: now))
         case "FAILED", "INVALID":
-            return .make(.buildInvalid, evidence: evidence, reason: "REJECTED_BY_APPLE",
+            return .make(.buildInvalid, evidence: evidence, reason: .rejectedByApple,
                          detail: String(localized: "Apple rejected build \(latest.number). You'll need to upload a new one."))
         case "VALID":
             break
         default:
-            return .make(.unknown, evidence: evidence)
+            return .make(.unknown, evidence: evidence, reason: .unrecognizedProcessingState)
         }
 
         // Processing finished, but the beta state is what decides everything below. If the fetch
         // that carries it failed, say so instead of falling through to a confident verdict.
         guard latest.betaStateIsKnown else {
-            return .make(.unknown, evidence: evidence, reason: "BETA_STATE_UNREAD")
+            return .make(.unknown, evidence: evidence, reason: .betaStateUnread)
         }
 
         // Unanswered export compliance blocks distribution even after processing. Common, and invisible.
         if latest.internalState == "MISSING_EXPORT_COMPLIANCE"
             || latest.externalState == "MISSING_EXPORT_COMPLIANCE"
         {
-            return .make(.actionRequired, evidence: evidence, reason: "MISSING_EXPORT_COMPLIANCE",
+            return .make(.actionRequired, evidence: evidence, reason: .missingExportCompliance,
                          detail: String(localized: "Distribution waits on the export compliance question. Answer it once in App Store Connect."))
         }
 
         if latest.isExpired || latest.internalState == "EXPIRED" {
-            return .make(.actionRequired, evidence: evidence, reason: "EXPIRED",
+            return .make(.actionRequired, evidence: evidence, reason: .expired,
                          detail: String(localized: "This build expired. TestFlight builds stop installing 90 days after upload."))
         }
 
         if latest.externalState == "BETA_REJECTED" {
-            return .make(.actionRequired, evidence: evidence, reason: "BETA_REJECTED",
+            return .make(.actionRequired, evidence: evidence, reason: .betaRejected,
                          detail: String(localized: "Apple turned down external testing. The reason is in App Store Connect."))
         }
 
         if latest.internalState == "PROCESSING_EXCEPTION"
             || latest.externalState == "PROCESSING_EXCEPTION"
         {
-            return .make(.actionRequired, evidence: evidence, reason: "PROCESSING_EXCEPTION",
+            return .make(.actionRequired, evidence: evidence, reason: .processingException,
                          detail: String(localized: "Apple hit a problem processing this build. The details are in App Store Connect."))
         }
 
@@ -136,7 +138,7 @@ enum RuleEngine {
         // build** can reach someone. An unreadable attachment is unknown, never "not attached".
         switch latest.hasAssignedAudience(among: groups) {
         case .unknown:
-            return .make(.unknown, evidence: evidence, reason: "AUDIENCE_UNREAD")
+            return .make(.unknown, evidence: evidence, reason: .audienceUnread)
         case .unreachable:
             return .make(.buildReadyNotDistributed, evidence: evidence,
                          reason: strandedReason(latest, among: groups),
@@ -155,23 +157,23 @@ enum RuleEngine {
             return latest.isLiveInternally
                 ? .make(.externalReviewRequired, evidence: evidence)
                 : .make(.buildReadyNotDistributed, evidence: evidence,
-                        reason: "NOT_YET_LIVE",
+                        reason: .notYetLive,
                         detail: String(localized: "Apple has not released this build to testers yet."))
         default:
             return latest.isLiveInternally
                 ? .make(.internalTestingReady, evidence: evidence)
                 : .make(.buildReadyNotDistributed, evidence: evidence,
-                        reason: "NOT_YET_LIVE",
+                        reason: .notYetLive,
                         detail: String(localized: "Apple has not released this build to testers yet."))
         }
     }
 
     private static func strandedReason(_ build: BuildSnapshot, among groups: [GroupSnapshot])
-        -> String
+        -> StateReason
     {
-        if groups.isEmpty { return "NO_GROUPS" }
-        if build.assignedGroupIDs?.isEmpty ?? true { return "BUILD_NOT_ASSIGNED" }
-        return "GROUPS_EMPTY"
+        if groups.isEmpty { return .noGroups }
+        if build.assignedGroupIDs?.isEmpty ?? true { return .buildNotAssigned }
+        return .groupsEmpty
     }
 
     private static func strandedDetail(_ build: BuildSnapshot, among groups: [GroupSnapshot])

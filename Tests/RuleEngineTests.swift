@@ -65,20 +65,20 @@ final class RuleEngineTests: XCTestCase {
     func testRejectedBuild() {
         let status = RuleEngine.resolve(groups: [group()], builds: [build(processing: "INVALID")])
         XCTAssertEqual(status.state.id, .buildInvalid)
-        XCTAssertEqual(status.state.reason, "REJECTED_BY_APPLE")
+        XCTAssertEqual(status.state.reason, .rejectedByApple)
     }
 
     func testExpiredBuildNeedsAction() {
         let status = RuleEngine.resolve(groups: [group()], builds: [build(expired: true)])
         XCTAssertEqual(status.state.id, .actionRequired)
-        XCTAssertEqual(status.state.reason, "EXPIRED")
+        XCTAssertEqual(status.state.reason, .expired)
     }
 
     func testMissingExportComplianceBlocksDistribution() {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(internalState: "MISSING_EXPORT_COMPLIANCE")])
         XCTAssertEqual(status.state.id, .actionRequired)
-        XCTAssertEqual(status.state.reason, "MISSING_EXPORT_COMPLIANCE")
+        XCTAssertEqual(status.state.reason, .missingExportCompliance)
     }
 
     // MARK: - Audience resolution — a group existing is not a build being attached
@@ -87,7 +87,7 @@ final class RuleEngineTests: XCTestCase {
     func testValidBuildWithNoGroupIsStranded() {
         let status = RuleEngine.resolve(groups: [], builds: [build(assignedGroups: [])])
         XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
-        XCTAssertEqual(status.state.reason, "NO_GROUPS")
+        XCTAssertEqual(status.state.reason, .noGroups)
         XCTAssertEqual(status.state.nextAction, .assignBuildToGroup)
         XCTAssertNil(status.testable)
     }
@@ -97,13 +97,13 @@ final class RuleEngineTests: XCTestCase {
         let status = RuleEngine.resolve(
             groups: [group(testers: 5)], builds: [build(assignedGroups: [])])
         XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
-        XCTAssertEqual(status.state.reason, "BUILD_NOT_ASSIGNED")
+        XCTAssertEqual(status.state.reason, .buildNotAssigned)
     }
 
     func testAssignedGroupWithNoTesterIsStranded() {
         let status = RuleEngine.resolve(groups: [group(testers: 0)], builds: [build()])
         XCTAssertEqual(status.state.id, .buildReadyNotDistributed)
-        XCTAssertEqual(status.state.reason, "GROUPS_EMPTY")
+        XCTAssertEqual(status.state.reason, .groupsEmpty)
     }
 
     /// Individual testers count as distribution even with no groups at all.
@@ -189,6 +189,37 @@ final class RuleEngineTests: XCTestCase {
         let status = RuleEngine.resolve(
             groups: [group()], builds: [build(internalState: "FUTURE_STATE")])
         XCTAssertEqual(status.state.id, .unknown)
+    }
+
+    // MARK: - Notification policy
+
+    /// P1-1. UNKNOWN carried one policy for two opposite events. "Apple sent a value we have
+    /// never seen" is news; "a fetch came back empty" is our own blind spot, and announcing it
+    /// made every network blip look like something needing attention.
+    func testAnUnreadUnknownIsSilentAndAnUnrecognizedOneIsNot() {
+        for reason in [StateReason.betaStateUnread, .audienceUnread] {
+            XCTAssertEqual(AppStateDefinition.make(.unknown, reason: reason).notificationPolicy,
+                           .silent, "\(reason.rawValue) describes our own failure to read")
+        }
+        for reason in [StateReason.unrecognizedProcessingState, .unrecognizedInternalState,
+                       .unrecognizedExternalState] {
+            XCTAssertEqual(AppStateDefinition.make(.unknown, reason: reason).notificationPolicy,
+                           .notifyWhenEntering, "\(reason.rawValue) is news about the app")
+        }
+    }
+
+    /// The unrecognized exits used to carry no reason at all, which is precisely the
+    /// information the policy needs in order to tell the two cases apart.
+    func testUnrecognizedValuesSayWhichValueWasUnrecognized() {
+        XCTAssertEqual(RuleEngine.resolve(groups: [group()],
+                                          builds: [build(processing: "QUANTUM")]).state.reason,
+                       .unrecognizedProcessingState)
+        XCTAssertEqual(RuleEngine.resolve(groups: [group()],
+                                          builds: [build(internalState: "FUTURE_STATE")]).state.reason,
+                       .unrecognizedInternalState)
+        XCTAssertEqual(RuleEngine.resolve(groups: [group()],
+                                          builds: [build(externalState: "FUTURE_STATE")]).state.reason,
+                       .unrecognizedExternalState)
     }
 
     // MARK: - Fingerprints

@@ -176,6 +176,24 @@ final class StoreTests: XCTestCase {
                        "a partial read must not enter the timeline either")
     }
 
+    /// P1-1. The other half of the split: a value Apple has never sent before is news, and
+    /// silencing UNKNOWN wholesale would have swallowed it along with the blips.
+    func testAnUnrecognizedAppleValueStillNotifies() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore(dbName: "unrecognized.sqlite")
+        await refreshAndWait(store)
+        XCTAssertEqual(notifier.count, 0)
+
+        var strange = table()
+        strange["/v1/builds?"] = .json(Fixture.builds(["1"], state: "QUANTUM_PROCESSING"))
+        MockURLProtocol.respond(strange)
+        await refreshAndWait(store)
+
+        XCTAssertEqual(store.apps.first?.status.state.id, .unknown)
+        XCTAssertEqual(store.apps.first?.status.state.reason, .unrecognizedProcessingState)
+        XCTAssertEqual(notifier.count, 1, "a value nobody has seen before is worth a banner")
+    }
+
     // MARK: - Failure isolation
 
     /// Apps are matched by ID, not by name: names collide and change.

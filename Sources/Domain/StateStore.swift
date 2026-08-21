@@ -297,7 +297,7 @@ final class StateStore: @unchecked Sendable {
     }
 
     func recordTransition(appID: String, from: AppStateID?, to: AppStateID,
-                          fingerprint: String, reason: String? = nil, at: Date = Date())
+                          fingerprint: String, reason: StateReason? = nil, at: Date = Date())
     {
         let ok: Bool = queue.sync {
             var stmt: OpaquePointer?
@@ -316,7 +316,7 @@ final class StateStore: @unchecked Sendable {
             sqlite3_bind_text(stmt, 3, to.rawValue, -1, SQLITE_TRANSIENT)
             sqlite3_bind_text(stmt, 4, fingerprint, -1, SQLITE_TRANSIENT)
             if let reason {
-                sqlite3_bind_text(stmt, 5, reason, -1, SQLITE_TRANSIENT)
+                sqlite3_bind_text(stmt, 5, reason.rawValue, -1, SQLITE_TRANSIENT)
             } else {
                 sqlite3_bind_null(stmt, 5)
             }
@@ -333,6 +333,10 @@ final class StateStore: @unchecked Sendable {
         var from: AppStateID?
         var to: AppStateID
         /// Why the state changed, when the state ID alone doesn't say.
+        ///
+        /// Kept as text on the way out: rows written by older versions carry reason codes
+        /// this build no longer defines, and dropping them would blank a history entry
+        /// rather than show it.
         var reason: String?
         var at: Date
     }
