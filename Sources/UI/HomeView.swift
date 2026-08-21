@@ -75,11 +75,15 @@ struct HomeView: View {
                 if store.isRefreshing {
                     ProgressView().controlSize(.small)
                     Text(String(localized: "Checking…"))
-                } else if let error = store.errorMessage {
-                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-                    Text(error).lineLimit(1)
                 } else {
-                    Text(String(localized: "Last checked \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))"))
+                    if let error = store.errorMessage {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(error).lineLimit(1)
+                        Text(verbatim: "·")   // a separator, not a phrase to translate
+                    }
+                    // Said beside the error rather than instead of it: what went wrong and how
+                    // old the numbers on screen are are two different things to know.
+                    Text(freshnessText(at: context.date)).lineLimit(1)
                 }
                 Spacer()
             }
@@ -93,6 +97,19 @@ struct HomeView: View {
 }
 
 extension HomeView {
+    /// Never claims a check succeeded because an attempt finished.
+    private func freshnessText(at now: Date) -> String {
+        switch store.freshness {
+        case .checking:
+            return String(localized: "Checking…")
+        case .checked(let at):
+            return String(localized: "Last checked \(RelativeTime.string(at, relativeTo: now))")
+        case .stale(let lastGood):
+            guard let lastGood else { return String(localized: "No successful check yet") }
+            return String(localized: "showing data from \(RelativeTime.string(lastGood, relativeTo: now))")
+        }
+    }
+
     private func alertRow(_ message: String, symbol: String) -> some View {
         alertRow(message, symbol: symbol) { EmptyView() }
     }

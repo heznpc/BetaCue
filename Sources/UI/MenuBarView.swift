@@ -15,7 +15,9 @@ struct MenuBarView: View {
                     .padding(.horizontal, 12)
                     .padding(.vertical, 10)
             } else if store.apps.isEmpty {
-                Text(store.isRefreshing ? String(localized: "Checking…") : String(localized: "No apps"))
+                // "No apps" was shown for a failed first read too, which states as fact the
+                // one thing that was never established.
+                Text(emptyMessage)
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12)
@@ -29,12 +31,16 @@ struct MenuBarView: View {
             Divider().padding(.vertical, 5)
 
             TimelineView(.periodic(from: .now, by: 10)) { context in
-                HStack {
-                    Text(String(localized: "Last checked \(RelativeTime.string(store.lastRefresh, relativeTo: context.date))"))
-                        .font(.caption)
+                HStack(spacing: 5) {
+                    if case .stale = store.freshness {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                    }
+                    Text(freshnessText(at: context.date))
                         .foregroundStyle(.secondary)
                     Spacer()
                 }
+                .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 7)
             }
@@ -45,6 +51,27 @@ struct MenuBarView: View {
         }
         .padding(.vertical, 7)
         .frame(width: 292)
+    }
+
+    private var emptyMessage: String {
+        switch store.freshness {
+        case .checking: return String(localized: "Checking…")
+        case .stale:    return String(localized: "Couldn't read your apps")
+        case .checked:  return String(localized: "No apps")
+        }
+    }
+
+    /// Never claims a check succeeded because an attempt finished.
+    private func freshnessText(at now: Date) -> String {
+        switch store.freshness {
+        case .checking:
+            return String(localized: "Checking…")
+        case .checked(let at):
+            return String(localized: "Last checked \(RelativeTime.string(at, relativeTo: now))")
+        case .stale(let lastGood):
+            guard let lastGood else { return String(localized: "No successful check yet") }
+            return String(localized: "Check failed · showing data from \(RelativeTime.string(lastGood, relativeTo: now))")
+        }
     }
 
     private func row(_ app: AppSnapshot) -> some View {

@@ -11,7 +11,13 @@ import Observation
 final class Store {
     private(set) var apps: [AppSnapshot] = []
     private(set) var certificates: [CertificateSnapshot] = []
-    private(set) var lastRefresh: Date?
+    /// When a refresh last came back with data. This is what "last checked" may honestly mean.
+    private(set) var lastSuccessfulRefresh: Date?
+    /// When a refresh was last started, successful or not.
+    ///
+    /// Kept apart from the one above because a failed attempt used to leave the window saying
+    /// "last checked just now", which reads as everything being fine.
+    private(set) var lastRefreshAttempt: Date?
     private(set) var isRefreshing = false
     private(set) var errorMessage: String?
     /// Notification permission. A denial means no state change can be announced, so the UI says so.
@@ -91,7 +97,7 @@ final class Store {
         }
         // Show the last known state immediately instead of waiting on the network. (spec UC-01 ①)
         self.apps = Self.sorted(persistence.loadSnapshots())
-        self.lastRefresh = apps.map(\.fetchedAt).max()
+        self.lastSuccessfulRefresh = apps.map(\.fetchedAt).max()
         // A database that failed to open has already happened by now, migration included.
         self.persistenceHealth = persistence.health
         notifier.observeFailures { [weak self] message in
@@ -183,6 +189,7 @@ final class Store {
             return
         }
         isRefreshing = true
+        lastRefreshAttempt = Date()
         defer {
             isRefreshing = false
             // Every path below can degrade the database — a snapshot that would not save, a
@@ -228,7 +235,7 @@ final class Store {
                                       appListWasComplete: failedNames.isEmpty && appPage.isComplete)
             apps = collected
 
-            lastRefresh = Date()
+            lastSuccessfulRefresh = Date()
             errorMessage = failedNames.isEmpty
                 ? nil
                 : String(localized: "Couldn't read \(failedNames.joined(separator: ", ")); showing the previous state.")
@@ -249,6 +256,27 @@ final class Store {
             guard generation == configGeneration else { return }
             errorMessage = (error as? ASCError)?.localizedDescription ?? error.localizedDescription
         }
+    }
+
+    /// How current what is on screen actually is.
+    ///
+    /// The menu bar read `lastRefresh` and said "Last checked just now" whichever way the
+    /// attempt went, so the first API failure showed "No apps" and a later one showed stale
+    /// data under a fresh timestamp — a broken connection rendered as a healthy one. Naming
+    /// the three cases here keeps both views from having to infer it, and lets the decision
+    /// be asserted without depending on the running language.
+    enum Freshness: Equatable, Sendable {
+        case checking
+        case checked(Date?)
+        case stale(lastGood: Date?)
+    }
+
+    var freshness: Freshness {
+        if isRefreshing { return .checking }
+        guard let attempt = lastRefreshAttempt else { return .checked(lastSuccessfulRefresh) }
+        let failed = lastSuccessfulRefresh.map { attempt > $0 } ?? true
+        return failed ? .stale(lastGood: lastSuccessfulRefresh)
+                      : .checked(lastSuccessfulRefresh)
     }
 
     /// Needs-attention first, then alphabetical. (spec §13)

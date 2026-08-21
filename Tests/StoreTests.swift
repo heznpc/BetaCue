@@ -83,11 +83,11 @@ final class StoreTests: XCTestCase {
 
     /// Waits for a *new* refresh to land, not merely for one to have happened before.
     private func refreshAndWait(_ store: Store) async {
-        let before = store.lastRefresh
+        let before = store.lastSuccessfulRefresh
         store.refresh()
         for _ in 0..<300 {
             try? await Task.sleep(for: .milliseconds(20))
-            if !store.isRefreshing && store.lastRefresh != before { return }
+            if !store.isRefreshing && store.lastSuccessfulRefresh != before { return }
         }
         XCTFail("refresh did not complete")
     }
@@ -180,7 +180,7 @@ final class StoreTests: XCTestCase {
 
         XCTAssertTrue(store.apps.isEmpty,
                       "got: \(store.apps.map(\.id)) — read with a key that is no longer set")
-        XCTAssertNil(store.lastRefresh, "and it did not count as a successful check either")
+        XCTAssertNil(store.lastSuccessfulRefresh, "and it did not count as a successful check either")
     }
 
     /// Certificates are secondary; their failure must not mark a good app refresh as failed.
@@ -193,7 +193,7 @@ final class StoreTests: XCTestCase {
         await refreshAndWait(store)
 
         XCTAssertEqual(store.apps.count, 1, "the apps still loaded")
-        XCTAssertNotNil(store.lastRefresh, "the refresh did happen")
+        XCTAssertNotNil(store.lastSuccessfulRefresh, "the refresh did happen")
     }
 
     // MARK: - Notifications
@@ -357,6 +357,55 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(notifier.count, 1, "got: \(notifier.messages)")
     }
 
+    // MARK: - Saying how current this is
+
+    /// P1-7. The first API failure showed "No apps" and said "Last checked just now", which
+    /// states as fact the one thing that was never established.
+    func testAFailedFirstReadIsNotAnEmptyAccount() async {
+        MockURLProtocol.respond(["/v1/apps": .init(status: 500)], fallback: .init(status: 500))
+        let store = makeStore(dbName: "first-failure.sqlite")
+        store.refresh()
+        await settle(store)
+
+        XCTAssertTrue(store.apps.isEmpty)
+        XCTAssertNotNil(store.errorMessage)
+        XCTAssertEqual(store.freshness, .stale(lastGood: nil),
+                       "nothing has ever been read; that is not a successful check")
+    }
+
+    /// A failure after a good read keeps the data and stops calling it current.
+    func testAFailedRefreshLeavesTheDataStaleRatherThanFresh() async {
+        MockURLProtocol.respond(table())
+        let store = makeStore(dbName: "stale.sqlite")
+        await refreshAndWait(store)
+        let good = store.lastSuccessfulRefresh
+        XCTAssertEqual(store.freshness, .checked(good))
+
+        MockURLProtocol.respond(["/v1/apps": .init(status: 503)], fallback: .init(status: 503))
+        store.refresh()
+        await settle(store)
+
+        XCTAssertEqual(store.apps.count, 1, "the last good data stays on screen")
+        XCTAssertEqual(store.lastSuccessfulRefresh, good, "but it is not newly confirmed")
+        XCTAssertEqual(store.freshness, .stale(lastGood: good))
+        XCTAssertNotNil(store.lastRefreshAttempt)
+    }
+
+    /// One app failing is not the whole check failing.
+    func testOneAppFailingStillCountsAsASuccessfulCheck() async {
+        MockURLProtocol.respond([
+            "/v1/apps": .json(Fixture.apps(["a1"])),
+            "/v1/certificates": .json(#"{"data":[]}"#),
+        ], fallback: .init(status: 500))
+        let store = makeStore(dbName: "partial-check.sqlite")
+        await refreshAndWait(store)
+
+        XCTAssertNotNil(store.errorMessage)
+        if case .stale = store.freshness {
+            XCTFail("the app list was read; the check itself did not fail")
+        }
+    }
+
     // MARK: - Diagnostics the window can actually see
 
     /// P1-6. `persistenceHealth` was a computed property reading another object, so
@@ -462,7 +511,7 @@ final class StoreTests: XCTestCase {
         MockURLProtocol.reset()
         let reopened = makeStore(dbName: "reopen.sqlite")
         XCTAssertEqual(reopened.apps.count, 1)
-        XCTAssertNotNil(reopened.lastRefresh)
+        XCTAssertNotNil(reopened.lastSuccessfulRefresh)
         XCTAssertTrue(MockURLProtocol.requests.isEmpty, "no network was needed to show it")
     }
 
