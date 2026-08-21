@@ -9,7 +9,6 @@ struct ASCList<Attributes: Decodable & Sendable>: Decodable, Sendable {
 
     /// Total the server knows about. Used to tell whether `limit` truncated the page.
     var total: Int { meta?.paging.total ?? data.count }
-    var isTruncated: Bool { total > data.count }
 }
 
 /// Relationship endpoints return `{type, id}` only, with no attributes.

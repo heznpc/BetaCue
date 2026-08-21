@@ -21,13 +21,26 @@ jobs:
       - name: Generate project
         run: xcodegen generate
 
-      # An empty DEVELOPMENT_TEAM is fine: macOS debug builds fall back to ad-hoc signing.
-      - name: Test
+      # An empty DEVELOPMENT_TEAM is fine: macOS builds fall back to ad-hoc signing.
+      - name: Test (Debug)
         run: |
           xcodebuild test \
             -project BetaCue.xcodeproj \
             -scheme BetaCue \
             -configuration Debug \
+            -destination 'platform=macOS' \
+            CODE_SIGN_IDENTITY=- \
+            | xcpretty && exit ${PIPESTATUS[0]}
+
+      # Debug passing says nothing about Release. Optimisation settings and dead-code
+      # stripping have broken builds that were green in Debug, and finding that out at
+      # release time is the expensive way to find out.
+      - name: Build (Release)
+        run: |
+          xcodebuild build \
+            -project BetaCue.xcodeproj \
+            -scheme BetaCue \
+            -configuration Release \
             -destination 'platform=macOS' \
             CODE_SIGN_IDENTITY=- \
             | xcpretty && exit ${PIPESTATUS[0]}

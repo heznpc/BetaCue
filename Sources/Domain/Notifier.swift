@@ -1,6 +1,18 @@
 import Foundation
 import UserNotifications
 
+/// The seam that lets notification decisions be tested without the system notification centre.
+///
+/// What matters is *which* transitions produce a banner, not that macOS displayed one.
+protocol NotificationSending: Sendable {
+    func post(title: String, body: String)
+}
+
+/// Delivers through macOS.
+struct SystemNotifier: NotificationSending {
+    func post(title: String, body: String) { Notifier.post(title: title, body: body) }
+}
+
 /// Notification delivery.
 ///
 /// A denied permission kills half of what this app is for — and kills it with no visible sign.

@@ -127,17 +127,6 @@
       "extractionState": "manual",
       "shouldTranslate": false
     },
-    "%@ · details changed": {
-      "extractionState": "manual",
-      "localizations": {
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%@ · 세부 변경"
-          }
-        }
-      }
-    },
     "%@ · previous version testable": {
       "extractionState": "manual",
       "localizations": {
@@ -336,6 +325,28 @@
         }
       }
     },
+    "Apple has not released this build to testers yet.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 아직 이 빌드를 테스터에게 공개하지 않았습니다."
+          }
+        }
+      }
+    },
+    "Apple hit a problem processing this build. The details are in App Store Connect.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Apple이 이 빌드를 처리하다 문제를 만났습니다. 자세한 내용은 App Store Connect에 있습니다."
+          }
+        }
+      }
+    },
     "Apple is processing": {
       "extractionState": "manual",
       "localizations": {
@@ -421,6 +432,17 @@
       "extractionState": "manual",
       "shouldTranslate": false
     },
+    "Cancel": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "취소"
+          }
+        }
+      }
+    },
     "Certificate expiring soon": {
       "extractionState": "manual",
       "localizations": {
@@ -461,6 +483,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "확인 중…"
+          }
+        }
+      }
+    },
+    "Choose who gets this build": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "받을 대상 선택"
           }
         }
       }
@@ -509,6 +542,28 @@
         }
       }
     },
+    "Couldn't create the data folder: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "데이터 폴더를 만들지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't open the local database: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 데이터베이스를 열지 못했습니다: %@"
+          }
+        }
+      }
+    },
     "Couldn't parse the response: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -538,6 +593,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "%@을(를) 읽지 못해 이전 상태를 표시합니다."
+          }
+        }
+      }
+    },
+    "Couldn't read certificates.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "인증서를 읽지 못했습니다."
           }
         }
       }
@@ -586,6 +652,17 @@
         }
       }
     },
+    "Couldn't record a state change, so notifications may be missed.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "상태 변화를 기록하지 못해 알림을 놓칠 수 있습니다."
+          }
+        }
+      }
+    },
     "Couldn't save settings: %@": {
       "extractionState": "manual",
       "localizations": {
@@ -593,6 +670,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "설정을 저장하지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't save the latest state locally.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "최신 상태를 로컬에 저장하지 못했습니다."
           }
         }
       }
@@ -615,6 +703,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "현재 버전"
+          }
+        }
+      }
+    },
+    "Distribute": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "배포"
           }
         }
       }
@@ -964,6 +1063,17 @@
         }
       }
     },
+    "Pick the groups to attach this build to.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 빌드를 연결할 그룹을 고르세요."
+          }
+        }
+      }
+    },
     "Quit": {
       "extractionState": "manual",
       "localizations": {
@@ -1026,6 +1136,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "새로고침"
+          }
+        }
+      }
+    },
+    "Refused an unexpected host: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예상하지 못한 호스트를 거부했습니다: %@"
           }
         }
       }
@@ -1151,6 +1272,17 @@
         }
       }
     },
+    "The local database could not be upgraded, so state changes are not being recorded.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "로컬 데이터베이스를 업그레이드하지 못해 상태 변화가 기록되지 않고 있습니다."
+          }
+        }
+      }
+    },
     "The request was refused": {
       "extractionState": "manual",
       "localizations": {
@@ -1217,6 +1349,28 @@
         }
       }
     },
+    "This reaches people outside your team.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "팀 밖의 사람에게 전달됩니다."
+          }
+        }
+      }
+    },
+    "Unknown": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없음"
+          }
+        }
+      }
+    },
     "Unnamed": {
       "extractionState": "manual",
       "localizations": {
@@ -1257,6 +1411,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "누가 테스트할 수 있나"
+          }
+        }
+      }
+    },
+    "Who gets %@?": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%@을(를) 누가 받나요?"
           }
         }
       }
@@ -1393,13 +1558,13 @@
         }
       }
     },
-    "the app": {
+    "unread": {
       "extractionState": "manual",
       "localizations": {
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "앱"
+            "value": "확인 못 함"
           }
         }
       }

@@ -7,13 +7,15 @@ import Foundation
 struct ASCCredentials: Equatable, Sendable {
     var keyID: String
     var issuerID: String
+    /// Overridable so tests can point at a scratch directory instead of the real one.
+    var keyDirectory: URL = ASCCredentials.defaultKeyDirectory
 
-    static let keyDirectory = FileManager.default
+    static let defaultKeyDirectory = FileManager.default
         .homeDirectoryForCurrentUser
         .appendingPathComponent(".appstoreconnect/private_keys", isDirectory: true)
 
     var privateKeyURL: URL {
-        Self.keyDirectory.appendingPathComponent("AuthKey_\(keyID).p8")
+        keyDirectory.appendingPathComponent("AuthKey_\(keyID).p8")
     }
 
     func privateKeyPEM() throws -> String {
@@ -25,8 +27,8 @@ struct ASCCredentials: Equatable, Sendable {
     }
 
     /// Key IDs actually present in the key directory. Onboarding lets you pick one.
-    static func discoverKeyIDs() -> [String] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: keyDirectory.path)) ?? []
+    static func discoverKeyIDs(in directory: URL = ASCCredentials.defaultKeyDirectory) -> [String] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
         return names
             .filter { $0.hasPrefix("AuthKey_") && $0.hasSuffix(".p8") }
             .map { String($0.dropFirst("AuthKey_".count).dropLast(".p8".count)) }
@@ -40,9 +42,13 @@ struct ASCCredentials: Equatable, Sendable {
 struct BetaCueConfig: Codable, Equatable, Sendable {
     var keyID: String = ""
     var issuerID: String = ""
+    /// Not persisted — overridable so tests can point at a scratch directory.
+    var keyDirectory: URL = ASCCredentials.defaultKeyDirectory
+    private enum CodingKeys: String, CodingKey { case keyID, issuerID }
+
     var credentials: ASCCredentials? {
         guard !keyID.isEmpty, !issuerID.isEmpty else { return nil }
-        return ASCCredentials(keyID: keyID, issuerID: issuerID)
+        return ASCCredentials(keyID: keyID, issuerID: issuerID, keyDirectory: keyDirectory)
     }
 
     static let url = FileManager.default

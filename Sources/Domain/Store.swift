@@ -23,12 +23,19 @@ final class Store {
     /// Whether the local database is working. Its failure silences notifications.
     var persistenceHealth: StateStore.Health { persistence.health }
 
+    /// The last banner macOS refused to show, if any. A dropped notification is never
+    /// retried — the transition is already recorded — so it has to be visible somewhere.
+    var lastNotificationFailure: String? { Notifier.lastDeliveryFailure }
+
     var config: BetaCueConfig {
-        didSet { client = config.credentials.map { ASCClient(credentials: $0) } }
+        didSet { client = makeClient() }
     }
 
     private var client: ASCClient?
     private let persistence: StateStore
+    private let session: URLSession
+    private let notifier: NotificationSending
+    private let retryDelayScale: Double
     private var refreshTask: Task<Void, Never>?
     private var pollTask: Task<Void, Never>?
 
@@ -37,13 +44,29 @@ final class Store {
     /// Polling and notifications outlive any window, so this instance lives as long as the app.
     static let shared = Store()
 
-    init(config: BetaCueConfig = .load(), persistence: StateStore = StateStore()) {
+    init(config: BetaCueConfig = .load(),
+         persistence: StateStore = StateStore(),
+         session: URLSession = .shared,
+         notifier: NotificationSending = SystemNotifier(),
+         retryDelayScale: Double = 1.0)
+    {
         self.config = config
         self.persistence = persistence
-        self.client = config.credentials.map { ASCClient(credentials: $0) }
+        self.session = session
+        self.notifier = notifier
+        self.retryDelayScale = retryDelayScale
+        self.client = config.credentials.map {
+            ASCClient(credentials: $0, session: session, retryDelayScale: retryDelayScale)
+        }
         // Show the last known state immediately instead of waiting on the network. (spec UC-01 ①)
         self.apps = Self.sorted(persistence.loadSnapshots())
         self.lastRefresh = apps.map(\.fetchedAt).max()
+    }
+
+    private func makeClient() -> ASCClient? {
+        config.credentials.map {
+            ASCClient(credentials: $0, session: session, retryDelayScale: retryDelayScale)
+        }
     }
 
     // MARK: - Polling (spec §22)
@@ -192,7 +215,7 @@ final class Store {
             guard shouldNotify(leaving: previousState, entering: current) else { continue }
             guard let message = notificationText(app: snapshot, from: previousState, to: current)
             else { continue }
-            Notifier.post(title: message.title, body: message.body)
+            notifier.post(title: message.title, body: message.body)
         }
     }
 
@@ -252,7 +275,7 @@ final class Store {
             let previous = persistence.exchangeFeedbackCount(
                 appID: "certificate:\(cert.id)", kind: "expiry-notified", newCount: 1)
             guard previous == nil else { continue }   // once per certificate
-            Notifier.post(title: String(localized: "Certificate expiring soon"),
+            notifier.post(title: String(localized: "Certificate expiring soon"),
                           body: String(localized: "\(cert.name) expires in \(days) days."))
         }
     }

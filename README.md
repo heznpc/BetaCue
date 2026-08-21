@@ -137,6 +137,24 @@ Domain values that tests assert on — `Audience`, `RelativeTime.Bucket` — are
 with the rendering pushed to a thin layer, so no test depends on which language the process
 happens to be running in.
 
+## Tests
+
+Every layer has its failure conditions pinned, because the ones that mattered were all
+about what happens when a fetch does not answer.
+
+| Suite | What it holds down |
+|---|---|
+| `ASCClientTests` | 200/204/4xx decoding, 429 and 5xx retry, the attempt ceiling, pagination, truncation, host validation on `links.next` |
+| `CollectorTests` | JSON to `AppSnapshot` — every failed sub-fetch stays `nil` rather than becoming zero, build order survives concurrency, the iOS filter reaches the wire |
+| `StoreTests` | single-flight refresh, ID-keyed fallback, first fetch silent, partial data silent, certificate failure isolated, snapshot shown before the network |
+| `CommandsTests` | the exact relationship payload, 204 as success, 409 surfaced and never retried, empty selection sends nothing |
+| `RuleEngineTests` / `ReliabilityTests` | state resolution and the unknown paths |
+| `StateStoreTests` | migration adoption, reason round-trip, prune guarding, an unopenable database |
+
+Requests are answered by a `URLProtocol` stub, so nothing here touches the network. CI runs
+the Debug tests and a Release build — optimisation settings have broken builds that were
+green in Debug.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

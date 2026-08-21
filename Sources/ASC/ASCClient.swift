@@ -42,9 +42,16 @@ actor ASCClient {
     private static let tokenLifetime: TimeInterval = 20 * 60
     private static let renewMargin: TimeInterval = 5 * 60
 
-    init(credentials: ASCCredentials, session: URLSession = .shared) {
+    /// Scales the retry backoff. Tests set it to zero so a ceiling case doesn't sleep for
+    /// seven seconds to prove a policy that is really about ordering, not duration.
+    private let retryDelayScale: Double
+
+    init(credentials: ASCCredentials, session: URLSession = .shared,
+         retryDelayScale: Double = 1.0)
+    {
         self.credentials = credentials
         self.session = session
+        self.retryDelayScale = retryDelayScale
     }
 
     // MARK: - Token
@@ -171,10 +178,6 @@ actor ASCClient {
         _ = try await send(path: path, method: "POST", body: encoded)
     }
 
-    func deleteNoContent(_ path: String, body: Encodable) async throws {
-        let encoded = try JSONEncoder().encode(AnyEncodable(body))
-        _ = try await send(path: path, method: "DELETE", body: encoded)
-    }
 
     func delete(_ path: String) async throws {
         _ = try await send(path: path, method: "DELETE", body: nil)
@@ -196,7 +199,8 @@ actor ASCClient {
                 guard attempt < Self.maxAttempts,
                       let delay = Self.retryDelay(for: error, attempt: attempt)
                 else { throw error }
-                try? await Task.sleep(for: .seconds(delay))
+                let scaled = delay * retryDelayScale
+                if scaled > 0 { try? await Task.sleep(for: .seconds(scaled)) }
             }
         }
     }

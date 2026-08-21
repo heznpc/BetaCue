@@ -92,8 +92,6 @@ struct GroupSnapshot: Identifiable, Sendable, Codable {
     var publicLinkEnabled: Bool
     var publicLink: String?
 
-    var testerCountIsKnown: Bool { testerCount != nil }
-
     /// Can anyone receive the app through this group?
     ///
     /// A public link can reach people at zero enrolled testers. An unreadable tester list
