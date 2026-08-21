@@ -5,8 +5,12 @@ import Foundation
 /// Five apps fetched serially take 20 seconds, so everything goes out concurrently.
 /// Secondary fetches never throw — one app returning 404 must not stop the others from refreshing.
 enum Collector {
-    /// Builds fetched per app. Capped by product decision since it only feeds the history list.
-    private static let buildHistoryLimit = 10
+    /// Builds fetched per app.
+    ///
+    /// This feeds two different jobs: the history list, and the search for the build that is
+    /// installable right now. If the newest ten are all processing or rejected while an
+    /// eleventh is still serving, a limit of ten would hide it.
+    private static let buildFetchLimit = 25
     private static let groupLimit = 50
     private static let testerLimit = 200
 
@@ -20,7 +24,7 @@ enum Collector {
         async let buildsRaw: ASCList<BuildAttributes> =
             client.get("/v1/builds?filter[app]=\(app.id)"
                        + "&filter[preReleaseVersion.platform]=IOS"
-                       + "&limit=\(buildHistoryLimit)&sort=-uploadedDate")
+                       + "&limit=\(buildFetchLimit)&sort=-uploadedDate")
 
         let (groupList, buildList) = try await (groupsRaw, buildsRaw)
 
@@ -35,9 +39,13 @@ enum Collector {
         // (The build → betaGroups relationship does not allow GET_RELATED.)
         let assignment = await loadAssignments(groups.value, using: client)
         problems += assignment.problems
+        // A group whose attachments could not be read makes every build's attachment list
+        // incomplete. Leaving it nil keeps "unread" from masquerading as "attached to nothing".
+        let assignmentsComplete = assignment.value.count == groups.value.count
         for index in builds.value.indices {
-            builds.value[index].assignedGroupIDs =
-                assignment.value.filter { $0.value.contains(builds.value[index].id) }.map(\.key)
+            builds.value[index].assignedGroupIDs = assignmentsComplete
+                ? assignment.value.filter { $0.value.contains(builds.value[index].id) }.map(\.key)
+                : nil
         }
 
         return AppSnapshot(
@@ -73,11 +81,10 @@ enum Collector {
                         id: g.id,
                         name: g.attributes.name,
                         isInternal: g.attributes.isInternalGroup,
-                        testerCount: testers?.count ?? 0,
+                        testerCount: testers?.count,
                         autoDistributes: g.attributes.hasAccessToAllBuilds ?? false,
                         publicLinkEnabled: g.attributes.publicLinkEnabled ?? false,
-                        publicLink: g.attributes.publicLink,
-                        testerCountIsExact: testers != nil)
+                        publicLink: g.attributes.publicLink)
                     let problem = testers == nil
                         ? String(localized: "Couldn't read testers for the '\(g.attributes.name)' group.") : nil
                     return (snapshot, problem)
@@ -124,10 +131,12 @@ enum Collector {
                         processingState: b.attributes.processingState ?? "UNKNOWN",
                         internalState: d?.data?.attributes.internalBuildState,
                         externalState: d?.data?.attributes.externalBuildState,
+                        betaStateIsKnown: d != nil,
                         uploadedAt: b.attributes.uploadedDate,
                         expiresAt: b.attributes.expirationDate,
                         isExpired: b.attributes.expired ?? false,
-                        individualTesterCount: ind?.count ?? 0)
+                        assignedGroupIDs: nil,
+                        individualTesterCount: ind?.count)
                     let problem = d == nil
                         ? String(localized: "Couldn't read distribution state for build \(b.attributes.version ?? b.id).") : nil
                     return (index, snapshot, problem)

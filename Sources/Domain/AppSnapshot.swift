@@ -32,7 +32,7 @@ struct AppStatus: Sendable {
     var state: AppStateDefinition
     /// The installable build. May be the newest, an older one, or none.
     var testable: BuildSnapshot?
-    /// Who can receive that build. Structured so tests don't depend on the running language.
+    /// Who can install that build. Structured so tests don't depend on the running language.
     var audience: Audience?
 
     /// One line describing the audience, localized.
@@ -45,7 +45,21 @@ struct AppStatus: Sendable {
     }
 }
 
-/// Who can install a given build, counted by channel.
+/// A fact that a fetch may have failed to establish.
+///
+/// The whole product rests on not confusing "no testers" with "couldn't read the testers".
+/// Modelling the second as `0` is what made a transient API error look like a real blocker.
+enum Reachability: Equatable, Sendable {
+    case reachable
+    case unreachable
+    case unknown
+}
+
+/// Who can install a given build **right now**, counted by channel.
+///
+/// Only channels that can actually install are counted. An external group of 100 attached to a
+/// build still waiting on beta review reaches nobody today, and saying "100 external" would be
+/// a confident wrong answer.
 struct Audience: Equatable, Sendable {
     var internalTesters = 0
     var externalTesters = 0
@@ -72,17 +86,23 @@ struct GroupSnapshot: Identifiable, Sendable, Codable {
     var id: String
     var name: String
     var isInternal: Bool
-    var testerCount: Int
+    /// `nil` means the tester list could not be read — not that the group is empty.
+    var testerCount: Int?
     var autoDistributes: Bool
     var publicLinkEnabled: Bool
     var publicLink: String?
-    /// Whether the tester count may be short because a page limit truncated it.
-    var testerCountIsExact: Bool = true
 
-    /// Is there anyone who can actually receive the app through this group?
+    var testerCountIsKnown: Bool { testerCount != nil }
+
+    /// Can anyone receive the app through this group?
     ///
-    /// With a public link enabled, people can join even at zero enrolled testers.
-    var canReachSomeone: Bool { testerCount > 0 || publicLinkEnabled }
+    /// A public link can reach people at zero enrolled testers. An unreadable tester list
+    /// is `unknown`, never `unreachable`.
+    var reachability: Reachability {
+        if publicLinkEnabled { return .reachable }
+        guard let testerCount else { return .unknown }
+        return testerCount > 0 ? .reachable : .unreachable
+    }
 }
 
 struct BuildSnapshot: Identifiable, Sendable, Codable {
@@ -94,38 +114,80 @@ struct BuildSnapshot: Identifiable, Sendable, Codable {
     var processingState: String
     var internalState: String?
     var externalState: String?
+    /// False when `buildBetaDetail` could not be read, so the two states above mean nothing.
+    var betaStateIsKnown: Bool = true
     var uploadedAt: Date?
     var expiresAt: Date?
     var isExpired: Bool
-    /// Beta groups this build is attached to. An app having groups is a different fact.
-    var assignedGroupIDs: [String] = []
-    /// Testers invited directly to this build without a group.
-    var individualTesterCount: Int = 0
+    /// Beta groups this build is attached to. `nil` means the attachments could not be read.
+    var assignedGroupIDs: [String]?
+    /// Testers invited directly to this build without a group. `nil` means unread.
+    var individualTesterCount: Int?
 
-    var isValid: Bool { processingState == "VALID" && !isExpired }
-    var isDistributedInternally: Bool { internalState == "IN_BETA_TESTING" }
+    var processingSucceeded: Bool { processingState == "VALID" && !isExpired }
+
+    /// Apple says this build is live for internal testers.
+    var isLiveInternally: Bool { betaStateIsKnown && internalState == "IN_BETA_TESTING" }
+
+    /// Apple says this build cleared external beta review and is live for external testers.
+    var isLiveExternally: Bool {
+        betaStateIsKnown && (externalState == "IN_BETA_TESTING" || externalState == "BETA_APPROVED")
+    }
 
     var daysUntilExpiry: Int? {
         guard let expiresAt else { return nil }
         return Calendar.current.dateComponents([.day], from: Date(), to: expiresAt).day
     }
 
-    /// Is there anyone who can actually receive this build?
-    func reachableAudience(among groups: [GroupSnapshot]) -> [GroupSnapshot] {
-        groups.filter { assignedGroupIDs.contains($0.id) && $0.canReachSomeone }
+    /// Groups this build is attached to that can reach someone.
+    func reachableGroups(among groups: [GroupSnapshot]) -> [GroupSnapshot] {
+        guard let assignedGroupIDs else { return [] }
+        return groups.filter { assignedGroupIDs.contains($0.id) && $0.reachability == .reachable }
     }
 
-    func isReachable(among groups: [GroupSnapshot]) -> Bool {
-        individualTesterCount > 0 || !reachableAudience(among: groups).isEmpty
+    /// Is there an audience configured for this build at all?
+    ///
+    /// This asks about **attachment**, not installability. A build can have an audience
+    /// configured and still be uninstallable because Apple has not finished with it.
+    func hasAssignedAudience(among groups: [GroupSnapshot]) -> Reachability {
+        guard let assignedGroupIDs, let individualTesterCount else { return .unknown }
+        if individualTesterCount > 0 { return .reachable }
+
+        let attached = groups.filter { assignedGroupIDs.contains($0.id) }
+        if attached.contains(where: { $0.reachability == .reachable }) { return .reachable }
+        if attached.contains(where: { $0.reachability == .unknown }) { return .unknown }
+        return .unreachable
+    }
+
+    /// Who can install this build right now, honouring Apple's beta states.
+    func installableAudience(among groups: [GroupSnapshot]) -> Audience? {
+        guard betaStateIsKnown else { return nil }
+        var audience = Audience()
+
+        if isLiveInternally {
+            let reachable = reachableGroups(among: groups).filter(\.isInternal)
+            audience.internalTesters = reachable.reduce(0) { $0 + ($1.testerCount ?? 0) }
+            audience.individualTesters = individualTesterCount ?? 0
+        }
+        if isLiveExternally {
+            let reachable = reachableGroups(among: groups).filter { !$0.isInternal }
+            audience.externalTesters = reachable.reduce(0) { $0 + ($1.testerCount ?? 0) }
+            audience.hasPublicLink = reachable.contains(where: \.publicLinkEnabled)
+        }
+        return audience.isEmpty ? nil : audience
     }
 
     /// One line for the history list.
     var humanState: String {
         if isExpired { return String(localized: "Expired") }
+        guard betaStateIsKnown else { return String(localized: "Unknown") }
         switch processingState {
         case "PROCESSING": return String(localized: "Checking")
         case "FAILED", "INVALID": return String(localized: "Rejected")
-        case "VALID": return isDistributedInternally ? String(localized: "Ready to test") : String(localized: "Not distributed")
+        case "VALID":
+            if isLiveExternally { return String(localized: "Internal and external testing") }
+            if isLiveInternally { return String(localized: "Ready to test") }
+            return String(localized: "Not distributed")
         default: return processingState
         }
     }

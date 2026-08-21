@@ -146,15 +146,15 @@ struct ActionButton: View {
     let action: NextAction
     let app: AppSnapshot
     let store: Store
+    @State private var showingPicker = false
 
-    /// Can this be distributed from here? Needs both a build to attach and a group that reaches someone.
-    private var inAppDistribution: (build: BuildSnapshot, groups: [GroupSnapshot])? {
+    /// Groups this build could be attached to that would actually reach someone.
+    private var candidates: [GroupSnapshot] {
         guard action == .assignBuildToGroup,
-              let build = app.latestBuild, build.isValid
-        else { return nil }
-        let targets = store.distributionTargets(for: build, in: app)
-            .filter(\.canReachSomeone)
-        return targets.isEmpty ? nil : (build, targets)
+              let build = app.latestBuild, build.processingSucceeded
+        else { return [] }
+        return store.distributionTargets(for: build, in: app)
+            .filter { $0.reachability == .reachable }
     }
 
     var body: some View {
@@ -166,27 +166,121 @@ struct ActionButton: View {
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(store.runningCommand == app.id)
+        .sheet(isPresented: $showingPicker) {
+            if let build = app.latestBuild {
+                DistributionPicker(build: build, groups: candidates, app: app, store: store)
+            }
+        }
     }
 
     private var title: String {
         guard action == .assignBuildToGroup else { return action.title }
-        guard let target = inAppDistribution else { return String(localized: "Distribute in App Store Connect") }
-        return target.groups.count == 1
-            ? String(localized: "Distribute to \(target.groups[0].name)")
-            : String(localized: "Distribute to testers")
+        switch candidates.count {
+        case 0:  return String(localized: "Distribute in App Store Connect")
+        case 1:  return String(localized: "Distribute to \(candidates[0].name)")
+        default: return String(localized: "Choose who gets this build")
+        }
     }
 
     private var symbol: String {
-        inAppDistribution == nil && action == .assignBuildToGroup
+        candidates.isEmpty && action == .assignBuildToGroup
             ? "arrow.up.forward.app" : action.symbol
     }
 
     private func perform() {
-        if let target = inAppDistribution {
-            store.distribute(build: target.build, of: app, to: target.groups)
+        guard let build = app.latestBuild, !candidates.isEmpty else {
+            if let url = app.appStoreConnectURL { NSWorkspace.shared.open(url) }
             return
         }
-        if let url = app.appStoreConnectURL { NSWorkspace.shared.open(url) }
+        // Never fan a build out to every candidate on one click. One unambiguous internal
+        // group can go straight through; anything else — more than one option, or a group
+        // that reaches outside — has to be chosen explicitly.
+        if candidates.count == 1, candidates[0].isInternal, !candidates[0].publicLinkEnabled {
+            store.distribute(build: build, of: app, to: candidates)
+        } else {
+            showingPicker = true
+        }
+    }
+}
+
+/// Explicit choice of who receives a build.
+///
+/// This is the only write the app performs, and attaching a build to an external group or a
+/// public link puts it in front of people outside the team. That is not a side effect of a
+/// single click.
+struct DistributionPicker: View {
+    let build: BuildSnapshot
+    let groups: [GroupSnapshot]
+    let app: AppSnapshot
+    let store: Store
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: Set<String> = []
+
+    private var reachesOutside: Bool {
+        groups.filter { selected.contains($0.id) }
+              .contains { !$0.isInternal || $0.publicLinkEnabled }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(String(localized: "Who gets \(build.displayVersion)?"))
+                    .font(.headline)
+                Text(String(localized: "Pick the groups to attach this build to."))
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+
+            ForEach(groups) { group in
+                Toggle(isOn: Binding(
+                    get: { selected.contains(group.id) },
+                    set: { on in
+                        if on { selected.insert(group.id) } else { selected.remove(group.id) }
+                    })
+                ) {
+                    HStack(spacing: 6) {
+                        Text(group.name)
+                        if !group.isInternal {
+                            Text(String(localized: "External"))
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        if group.publicLinkEnabled {
+                            Label(String(localized: "public link"), systemImage: "link")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+                        Spacer()
+                        if let count = group.testerCount {
+                            Text(String(localized: "\(count) people"))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            if reachesOutside {
+                Label(String(localized: "This reaches people outside your team."),
+                      systemImage: "exclamationmark.triangle.fill")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .padding(9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.12), in: .rect(cornerRadius: 7))
+            }
+
+            HStack {
+                Spacer()
+                Button(String(localized: "Cancel")) { dismiss() }
+                Button(String(localized: "Distribute")) {
+                    store.distribute(build: build, of: app,
+                                     to: groups.filter { selected.contains($0.id) })
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(selected.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
     }
 }
 

@@ -5,7 +5,7 @@ enum ASCError: LocalizedError, Equatable {
     case notConfigured
     case keyFileUnreadable(String)
     case badPrivateKey
-    case http(status: Int, title: String, detail: String)
+    case http(status: Int, title: String, detail: String, retryAfter: Double?)
     case transport(String)
 
     var errorDescription: String? {
@@ -16,7 +16,7 @@ enum ASCError: LocalizedError, Equatable {
             return String(localized: "Couldn't read the key file: \(path)")
         case .badPrivateKey:
             return String(localized: "That key file isn't in the expected format. Check that it's the .p8 Apple gave you.")
-        case .http(let status, let title, let detail):
+        case .http(let status, let title, let detail, _):
             return detail.isEmpty ? String(localized: "\(title) (HTTP \(status))") : detail
         case .transport(let message):
             return message
@@ -162,14 +162,60 @@ actor ASCClient {
         _ = try await send(path: path, method: "DELETE", body: nil)
     }
 
+    /// Apple answers 429 when a burst is too wide, and 5xx transiently. Neither is a real
+    /// verdict about the data, but the layers above turn a failed fetch into "unknown" and
+    /// then into a user-visible warning. Retrying here keeps transient noise out of the
+    /// state machine. 4xx other than 429 is a real answer and is never retried.
+    private static let maxAttempts = 4
+
     private func send(path: String, method: String, body: Data?) async throws -> Data {
+        var attempt = 0
+        while true {
+            attempt += 1
+            do {
+                return try await sendOnce(path: path, method: method, body: body)
+            } catch let error as ASCError {
+                guard attempt < Self.maxAttempts,
+                      let delay = Self.retryDelay(for: error, attempt: attempt)
+                else { throw error }
+                try? await Task.sleep(for: .seconds(delay))
+            }
+        }
+    }
+
+    /// Seconds to wait, or nil when the failure is final.
+    private static func retryDelay(for error: ASCError, attempt: Int) -> Double? {
+        switch error {
+        case .http(let status, _, _, let retryAfter):
+            guard status == 429 || (500..<600).contains(status) else { return nil }
+            if let retryAfter { return min(retryAfter, 30) }
+        case .transport:
+            break   // connection-level failures are worth one more try
+        default:
+            return nil
+        }
+        // Exponential with jitter so parallel callers don't line up on the same instant.
+        let base = pow(2.0, Double(attempt - 1))
+        return min(base, 8) + Double.random(in: 0...0.4)
+    }
+
+    private func sendOnce(path: String, method: String, body: Data?) async throws -> Data {
         // links.next arrives as an absolute URL, so accept both absolute and relative paths.
-        let resolved = path.hasPrefix("http")
-            ? URL(string: path)
-            : URL(string: path, relativeTo: Self.base)
+        let resolved: URL?
+        if path.hasPrefix("http") {
+            // A bearer token rides on every request, so never follow a host we did not expect.
+            guard let candidate = URL(string: path),
+                  candidate.scheme == "https",
+                  candidate.host == Self.base.host
+            else { throw ASCError.transport(String(localized: "Refused an unexpected host: \(path)")) }
+            resolved = candidate
+        } else {
+            resolved = URL(string: path, relativeTo: Self.base)
+        }
         guard let url = resolved else {
             throw ASCError.transport(String(localized: "Invalid path: \(path)"))
         }
+
         var request = URLRequest(url: url)
         request.httpMethod = method
         request.setValue("Bearer \(try token())", forHTTPHeaderField: "Authorization")
@@ -185,13 +231,16 @@ actor ASCClient {
             throw ASCError.transport(String(localized: "Couldn't reach App Store Connect: \(error.localizedDescription)"))
         }
 
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
         guard (200..<300).contains(status) else {
             let parsed = try? JSONDecoder().decode(ASCErrorResponse.self, from: data)
             let first = parsed?.errors.first
+            let retryAfter = (http?.value(forHTTPHeaderField: "Retry-After")).flatMap(Double.init)
             throw ASCError.http(status: status,
                                 title: first?.title ?? String(localized: "The request was refused"),
-                                detail: first?.detail ?? "")
+                                detail: first?.detail ?? "",
+                                retryAfter: retryAfter)
         }
         return data
     }

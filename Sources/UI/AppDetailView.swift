@@ -83,8 +83,10 @@ struct AppDetailView: View {
                 if let action = state.nextAction {
                     ActionButton(action: action, app: app, store: store)
                 }
-                Text(String(localized: "Last checked \(RelativeTime.string(app.fetchedAt))"))
-                    .font(.caption).foregroundStyle(.secondary)
+                TimelineView(.periodic(from: .now, by: 10)) { context in
+                    Text(String(localized: "Last checked \(RelativeTime.string(app.fetchedAt, relativeTo: context.date))"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -120,10 +122,7 @@ struct AppDetailView: View {
                             if group.publicLinkEnabled {
                                 Image(systemName: "link").foregroundStyle(.blue)
                             }
-                            Text(group.testerCount == 0
-                                 ? String(localized: "none")
-                                 : String(localized: "\(group.testerCount) people")
-                                   + (group.testerCountIsExact ? "" : "+"))
+                            Text(testerLabel(for: group))
                                 .foregroundStyle(isOn ? .primary : .secondary)
                             if group.autoDistributes {
                                 Image(systemName: "arrow.triangle.2.circlepath")
@@ -222,6 +221,13 @@ struct AppDetailView: View {
         f.dateFormat = "MM/dd HH:mm"
         return f
     }()
+
+    /// "Couldn't read it" is not "there are none". Saying "none" for an unread count is
+    /// exactly the confident wrong answer this app exists to avoid.
+    private func testerLabel(for group: GroupSnapshot) -> String {
+        guard let count = group.testerCount else { return String(localized: "unread") }
+        return count == 0 ? String(localized: "none") : String(localized: "\(count) people")
+    }
 
     /// Raw payload for advanced use. Collapsed by default. (spec §15, §29)
     private var appleDetails: some View {

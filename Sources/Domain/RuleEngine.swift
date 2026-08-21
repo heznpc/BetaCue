@@ -3,6 +3,7 @@ import Foundation
 /// Deterministic state resolution. No LLM is involved. (spec §2.1, §23)
 ///
 /// The same input must always produce the same output. Inference here would be a design failure.
+/// `now` is injected rather than read, so "same input, same output" is literally true.
 enum RuleEngine {
     /// Only values Apple actually sends are accepted; anything else resolves to UNKNOWN. (spec §29)
     private static let knownProcessingStates: Set<String> =
@@ -18,37 +19,33 @@ enum RuleEngine {
          "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW", "BETA_REJECTED",
          "BETA_APPROVED"]
 
-    static func resolve(groups: [GroupSnapshot], builds: [BuildSnapshot]) -> AppStatus {
+    static func resolve(groups: [GroupSnapshot], builds: [BuildSnapshot],
+                        now: Date = Date()) -> AppStatus
+    {
         let testable = currentlyTestable(groups: groups, builds: builds)
-        let state = latestUploadState(groups: groups, builds: builds)
-        return AppStatus(state: state,
-                         testable: testable,
-                         audience: testable.map { audience(for: $0, among: groups) })
+        return AppStatus(
+            state: latestUploadState(groups: groups, builds: builds, now: now),
+            testable: testable,
+            audience: testable?.installableAudience(among: groups))
     }
 
-    /// The build installable right now, which may not be the newest one.
+    /// The build a tester can install right now, which may not be the newest one.
     ///
-    /// Resolved separately from the latest-upload state so that "the previous build still works"
-    /// does not get lost while the newest build is processing.
+    /// Processing succeeding is not the same as being installable. Apple has to have finished
+    /// beta processing *and* the build has to reach someone through a channel that is actually
+    /// open — an external group behind an unfinished review reaches nobody today.
     static func currentlyTestable(groups: [GroupSnapshot], builds: [BuildSnapshot])
         -> BuildSnapshot?
     {
-        builds.first { $0.isValid && $0.isReachable(among: groups) }
-    }
-
-    static func audience(for build: BuildSnapshot, among groups: [GroupSnapshot]) -> Audience {
-        let reachable = build.reachableAudience(among: groups)
-        return Audience(
-            internalTesters: reachable.filter(\.isInternal).reduce(0) { $0 + $1.testerCount },
-            externalTesters: reachable.filter { !$0.isInternal }.reduce(0) { $0 + $1.testerCount },
-            individualTesters: build.individualTesterCount,
-            hasPublicLink: reachable.contains { $0.publicLinkEnabled })
+        builds.first { build in
+            build.processingSucceeded && build.installableAudience(among: groups) != nil
+        }
     }
 
     // MARK: - Latest upload
 
-    private static func latestUploadState(groups: [GroupSnapshot], builds: [BuildSnapshot])
-        -> AppStateDefinition
+    private static func latestUploadState(groups: [GroupSnapshot], builds: [BuildSnapshot],
+                                          now: Date) -> AppStateDefinition
     {
         guard let latest = builds.first else { return .make(.noBuild) }
 
@@ -63,8 +60,9 @@ enum RuleEngine {
         if let d = latest.uploadedAt {
             evidence["uploadedDate"] = ISO8601DateFormatter().string(from: d)
         }
-        evidence["assignedGroups"] = String(latest.assignedGroupIDs.count)
-        evidence["individualTesters"] = String(latest.individualTesterCount)
+        evidence["assignedGroups"] = latest.assignedGroupIDs.map { String($0.count) } ?? "unread"
+        evidence["individualTesters"] = latest.individualTesterCount.map(String.init) ?? "unread"
+        evidence["betaStateIsKnown"] = String(latest.betaStateIsKnown)
 
         // A single unrecognized value is enough to stop guessing.
         guard knownProcessingStates.contains(latest.processingState) else {
@@ -80,7 +78,7 @@ enum RuleEngine {
         switch latest.processingState {
         case "PROCESSING":
             return .make(.buildProcessing, evidence: evidence,
-                         detail: processingDetail(since: latest.uploadedAt))
+                         detail: processingDetail(since: latest.uploadedAt, now: now))
         case "FAILED", "INVALID":
             return .make(.buildInvalid, evidence: evidence, reason: "REJECTED_BY_APPLE",
                          detail: String(localized: "Apple rejected build \(latest.number). You'll need to upload a new one."))
@@ -88,6 +86,12 @@ enum RuleEngine {
             break
         default:
             return .make(.unknown, evidence: evidence)
+        }
+
+        // Processing finished, but the beta state is what decides everything below. If the fetch
+        // that carries it failed, say so instead of falling through to a confident verdict.
+        guard latest.betaStateIsKnown else {
+            return .make(.unknown, evidence: evidence, reason: "BETA_STATE_UNREAD")
         }
 
         // Unanswered export compliance blocks distribution even after processing. Common, and invisible.
@@ -108,26 +112,54 @@ enum RuleEngine {
                          detail: String(localized: "Apple turned down external testing. The reason is in App Store Connect."))
         }
 
+        if latest.internalState == "PROCESSING_EXCEPTION"
+            || latest.externalState == "PROCESSING_EXCEPTION"
+        {
+            return .make(.actionRequired, evidence: evidence, reason: "PROCESSING_EXCEPTION",
+                         detail: String(localized: "Apple hit a problem processing this build. The details are in App Store Connect."))
+        }
+
+        // Apple is still working, even though the upload itself is done.
+        if latest.internalState == "PROCESSING"
+            || latest.internalState == "IN_EXPORT_COMPLIANCE_REVIEW"
+        {
+            return .make(.buildProcessing, evidence: evidence,
+                         detail: processingDetail(since: latest.uploadedAt, now: now))
+        }
+
         // This is where things fail silently: the build is fine and reaches nobody.
         //
         // What matters is not whether the app has groups but whether **a group attached to this
-        // build** can reach someone. Individual testers count even with no groups at all.
-        if !latest.isReachable(among: groups) {
+        // build** can reach someone. An unreadable attachment is unknown, never "not attached".
+        switch latest.hasAssignedAudience(among: groups) {
+        case .unknown:
+            return .make(.unknown, evidence: evidence, reason: "AUDIENCE_UNREAD")
+        case .unreachable:
             return .make(.buildReadyNotDistributed, evidence: evidence,
                          reason: strandedReason(latest, among: groups),
                          detail: strandedDetail(latest, among: groups))
+        case .reachable:
+            break
         }
 
-        // Someone can receive it. External review progress decides the rest.
+        // An audience is configured. What Apple has opened decides the rest.
+        if latest.isLiveExternally { return .make(.externalTestingReady, evidence: evidence) }
+
         switch latest.externalState {
-        case "IN_BETA_TESTING", "BETA_APPROVED":
-            return .make(.externalTestingReady, evidence: evidence)
         case "WAITING_FOR_BETA_REVIEW", "IN_BETA_REVIEW":
             return .make(.externalReviewPending, evidence: evidence)
         case "READY_FOR_BETA_SUBMISSION":
-            return .make(.externalReviewRequired, evidence: evidence)
+            return latest.isLiveInternally
+                ? .make(.externalReviewRequired, evidence: evidence)
+                : .make(.buildReadyNotDistributed, evidence: evidence,
+                        reason: "NOT_YET_LIVE",
+                        detail: String(localized: "Apple has not released this build to testers yet."))
         default:
-            return .make(.internalTestingReady, evidence: evidence)
+            return latest.isLiveInternally
+                ? .make(.internalTestingReady, evidence: evidence)
+                : .make(.buildReadyNotDistributed, evidence: evidence,
+                        reason: "NOT_YET_LIVE",
+                        detail: String(localized: "Apple has not released this build to testers yet."))
         }
     }
 
@@ -135,7 +167,7 @@ enum RuleEngine {
         -> String
     {
         if groups.isEmpty { return "NO_GROUPS" }
-        if build.assignedGroupIDs.isEmpty { return "BUILD_NOT_ASSIGNED" }
+        if build.assignedGroupIDs?.isEmpty ?? true { return "BUILD_NOT_ASSIGNED" }
         return "GROUPS_EMPTY"
     }
 
@@ -145,18 +177,20 @@ enum RuleEngine {
         if groups.isEmpty {
             return String(localized: "There is no tester group.")
         }
-        if build.assignedGroupIDs.isEmpty {
+        if build.assignedGroupIDs?.isEmpty ?? true {
             return String(localized: "This build is attached to no group.")
         }
         return String(localized: "The attached groups have no testers and no public link.")
     }
 
     /// Say so when processing runs long, so nobody has to ask "is it still going?". (spec UC-02)
-    private static func processingDetail(since: Date?) -> String? {
+    private static func processingDetail(since: Date?, now: Date) -> String? {
         guard let since else { return nil }
-        let minutes = Int(Date().timeIntervalSince(since) / 60)
+        let minutes = Int(now.timeIntervalSince(since) / 60)
         guard minutes >= 1 else { return nil }
-        let elapsed = minutes < 60 ? String(localized: "uploaded %lld minutes ago") : String(localized: "uploaded %lld hours ago")
+        let elapsed = minutes < 60
+            ? String(localized: "uploaded \(minutes) minutes ago")
+            : String(localized: "uploaded \(minutes / 60) hours ago")
         if minutes >= 30 {
             return String(localized: "\(elapsed). Taking longer than usual, but there is nothing to do.")
         }

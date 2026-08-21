@@ -80,6 +80,9 @@ final class Store {
     }
 
     private func refreshNow() async {
+        // Polling calls this directly while a manual refresh may be in flight. @MainActor is not
+        // a mutex across suspension points, so guard explicitly.
+        guard !isRefreshing else { return }
         guard let client else {
             errorMessage = ASCError.notConfigured.localizedDescription
             return
@@ -88,26 +91,29 @@ final class Store {
         defer { isRefreshing = false }
 
         do {
-            let appList: ASCList<AppAttributes> = try await client.get("/v1/apps?limit=200")
+            let appList: [ASCResource<AppAttributes>] =
+                try await client.getAllPages("/v1/apps?limit=200")
 
             // One app failing must not block the rest; the failed one keeps its last state.
             var collected: [AppSnapshot] = []
             var failedNames: [String] = []
-            await withTaskGroup(of: Result<AppSnapshot, Error>.self) { group in
-                for app in appList.data {
+            await withTaskGroup(of: Result<AppSnapshot, AppLoadFailure>.self) { group in
+                for app in appList {
                     group.addTask {
                         do { return .success(try await Collector.loadApp(app, using: client)) }
-                        catch { return .failure(AppLoadFailure(name: app.attributes.name, underlying: error)) }
+                        catch {
+                            return .failure(AppLoadFailure(id: app.id, name: app.attributes.name,
+                                                           underlying: error))
+                        }
                     }
                 }
                 for await result in group {
                     switch result {
                     case .success(let snapshot): collected.append(snapshot)
-                    case .failure(let error):
-                        let name = (error as? AppLoadFailure)?.name ?? String(localized: "the app")
-                        failedNames.append(name)
-                        // Keep the previous snapshot rather than blanking the row.
-                        if let stale = apps.first(where: { $0.name == name }) {
+                    case .failure(let failure):
+                        failedNames.append(failure.name)
+                        // Match on ID: app names are not identifiers and can collide or change.
+                        if let stale = apps.first(where: { $0.id == failure.id }) {
                             collected.append(stale)
                         }
                     }
@@ -119,13 +125,21 @@ final class Store {
             persistence.saveSnapshots(collected)
             apps = collected
 
-            certificates = try await Collector.loadCertificates(using: client)
-            notifyExpiringCertificates()
-
             lastRefresh = Date()
             errorMessage = failedNames.isEmpty
                 ? nil
                 : String(localized: "Couldn't read \(failedNames.joined(separator: ", ")); showing the previous state.")
+
+            // Certificates are secondary. Their failure must not make a successful app refresh
+            // look like a failed one.
+            do {
+                certificates = try await Collector.loadCertificates(using: client)
+                notifyExpiringCertificates()
+            } catch {
+                if errorMessage == nil {
+                    errorMessage = String(localized: "Couldn't read certificates.")
+                }
+            }
         } catch {
             errorMessage = (error as? ASCError)?.localizedDescription ?? error.localizedDescription
         }
@@ -145,10 +159,10 @@ final class Store {
 
     private func detectAndNotify(_ next: [AppSnapshot]) {
         for snapshot in next {
-            // A snapshot carried over from a partial failure is not a transition.
-            guard !snapshot.isPartial || snapshot.fetchedAt > (lastRefresh ?? .distantPast) else {
-                continue
-            }
+            // Incomplete data must not become a state transition. A transient API failure
+            // reads as "unknown", and announcing that as a change would turn every blip into
+            // a notification. Record only what was read completely.
+            guard !snapshot.isPartial else { continue }
             let current = snapshot.status.state
             let previous = persistence.lastFingerprint(appID: snapshot.id)
             guard previous?.fingerprint != current.fingerprint else { continue }
@@ -236,8 +250,12 @@ final class Store {
     }
 
     /// Groups this build could be attached to, excluding the ones it already belongs to.
+    ///
+    /// Returns nothing when the attachments could not be read — offering to distribute a build
+    /// whose current attachments are unknown risks a duplicate or unwanted assignment.
     func distributionTargets(for build: BuildSnapshot, in app: AppSnapshot) -> [GroupSnapshot] {
-        app.groups.filter { !build.assignedGroupIDs.contains($0.id) }
+        guard let assigned = build.assignedGroupIDs else { return [] }
+        return app.groups.filter { !assigned.contains($0.id) }
     }
 
     // MARK: - Read helpers
@@ -249,6 +267,7 @@ final class Store {
 
 /// Knowing which app failed is what lets only that app fall back to its previous state.
 struct AppLoadFailure: Error {
+    var id: String
     var name: String
     var underlying: Error
 }
