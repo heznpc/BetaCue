@@ -237,6 +237,17 @@
         }
       }
     },
+    "%lld older builds": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이전 빌드 %lld개"
+          }
+        }
+      }
+    },
     "%lld people": {
       "extractionState": "manual",
       "localizations": {
@@ -560,6 +571,17 @@
           "stringUnit": {
             "state": "translated",
             "value": "데이터 폴더를 만들지 못했습니다: %@"
+          }
+        }
+      }
+    },
+    "Couldn't look past the %lld newest builds for one that still installs.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "설치 가능한 빌드를 찾기 위해 최신 빌드 %lld개 너머를 확인하지 못했습니다."
           }
         }
       }

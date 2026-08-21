@@ -202,15 +202,22 @@ enum Fixture {
     }
 
     static func builds(_ ids: [String], state: String = "VALID",
-                       audienceType: String? = nil) -> String {
+                       audienceType: String? = nil, expired: Bool = false,
+                       nextPage: String? = nil) -> String {
         let audience = audienceType.map { #","buildAudienceType":"\#($0)""# } ?? ""
         let entries = ids.map {
             """
             {"type":"builds","id":"\($0)","attributes":
-             {"version":"\($0)","processingState":"\(state)","expired":false\(audience)}}
+             {"version":"\($0)","processingState":"\(state)","expired":\(expired)\(audience)}}
             """
         }
-        return #"{"data":[\#(entries.joined(separator: ","))]}"#
+        let links = nextPage.map { #","links":{"next":"\#($0)"}"# } ?? ""
+        return #"{"data":[\#(entries.joined(separator: ","))]\#(links)}"#
+    }
+
+    /// An absolute App Store Connect URL, which is the shape `links.next` really has.
+    static func nextBuildPage(_ cursor: String) -> String {
+        "https://api.appstoreconnect.apple.com/v1/builds?cursor=\(cursor)"
     }
 
     static func groups(_ ids: [String], isInternal: Bool = true) -> String {

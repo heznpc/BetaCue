@@ -179,6 +179,103 @@ final class CollectorTests: XCTestCase {
                      "a list cut short by the page ceiling is not a count")
     }
 
+    // MARK: - Looking past the history page for something installable
+
+    /// Answers the build endpoint from a script of pages, keyed by cursor.
+    private func respondWithBuildPages(_ pages: [String], table: [String: MockURLProtocol.Response]) {
+        MockURLProtocol.handler = { request in
+            let url = request.url?.absoluteString ?? ""
+            let path = request.url.map { $0.path + ($0.query.map { "?\($0)" } ?? "") } ?? ""
+            if path.hasPrefix("/v1/builds?") {
+                let index = url.range(of: "cursor=").map {
+                    Int(url[$0.upperBound...]) ?? 0
+                } ?? 0
+                return .json(pages[min(index, pages.count - 1)])
+            }
+            for (key, response) in table.sorted(by: { $0.key.count > $1.key.count })
+            where path.contains(key) { return response }
+            return .init(status: 404)
+        }
+    }
+
+    /// P1-9. The page size is a display choice; installability is not. A serving build sitting
+    /// past the first page used to be reported as "nobody can install anything", and the
+    /// newest builds are exactly the ones most likely to be stuck.
+    func testFindsAnInstallableBuildPastTheFirstPage() async throws {
+        var table = healthyTable()
+        table["relationships/builds"] = .json(Fixture.relationship(["old"]))
+        respondWithBuildPages([
+            Fixture.builds(["30", "29"], state: "PROCESSING",
+                           nextPage: Fixture.nextBuildPage("1")),
+            Fixture.builds(["old"]),
+        ], table: table)
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertEqual(snapshot.builds.map(\.number), ["30", "29", "old"],
+                       "the newer page still comes first")
+        XCTAssertEqual(snapshot.status.testable?.id, "old")
+        XCTAssertTrue(snapshot.partialErrors.isEmpty, "got: \(snapshot.partialErrors)")
+    }
+
+    /// One page is enough when it already answers the question, and reading more would cost
+    /// three extra requests per build for nothing.
+    func testStopsAtTheFirstPageWhenSomethingAlreadyInstalls() async throws {
+        var table = healthyTable()
+        table["relationships/builds"] = .json(Fixture.relationship(["1"]))
+        respondWithBuildPages([
+            Fixture.builds(["1"], nextPage: Fixture.nextBuildPage("1")),
+            Fixture.builds(["old"]),
+        ], table: table)
+
+        _ = try await Collector.loadApp(app, using: client)
+        let buildListCalls = MockURLProtocol.requests.filter {
+            ($0.url?.path.hasSuffix("/v1/builds") ?? false)
+        }
+        XCTAssertEqual(buildListCalls.count, 1, "nothing older can change the answer")
+    }
+
+    /// Apple expires a build 90 days after upload and returns them newest first, so an expired
+    /// build ends the search on a read fact rather than on a cap.
+    func testStopsSearchingOnceTheBuildsAreExpired() async throws {
+        var table = healthyTable()
+        table["relationships/builds"] = .json(Fixture.emptyRelationship)
+        respondWithBuildPages([
+            Fixture.builds(["9"], expired: true, nextPage: Fixture.nextBuildPage("1")),
+            Fixture.builds(["8"], expired: true),
+        ], table: table)
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertNil(snapshot.status.testable)
+        XCTAssertTrue(snapshot.partialErrors.isEmpty,
+                      "nothing behind an expired build can install; that is an answer")
+        XCTAssertEqual(MockURLProtocol.requests.filter {
+            $0.url?.path.hasSuffix("/v1/builds") ?? false
+        }.count, 1)
+    }
+
+    /// Giving up at the ceiling is ignorance, and must not read as "nothing installs".
+    func testGivingUpTheSearchIsReportedRatherThanAnswered() async throws {
+        var mutable = healthyTable()
+        mutable["relationships/builds"] = .json(Fixture.emptyRelationship)
+        let table = mutable
+        MockURLProtocol.handler = { request in
+            let path = request.url.map { $0.path + ($0.query.map { "?\($0)" } ?? "") } ?? ""
+            if path.hasPrefix("/v1/builds?") {
+                // Always one more page, never anything installable.
+                return .json(Fixture.builds(["x"], state: "PROCESSING",
+                                            nextPage: Fixture.nextBuildPage("9")))
+            }
+            for (key, response) in table.sorted(by: { $0.key.count > $1.key.count })
+            where path.contains(key) { return response }
+            return .init(status: 404)
+        }
+
+        let snapshot = try await Collector.loadApp(app, using: client)
+        XCTAssertNil(snapshot.status.testable)
+        XCTAssertTrue(snapshot.isPartial,
+                      "an unfinished search is not proof that nothing installs")
+    }
+
     // MARK: - Ordering and isolation
 
     func testKeepsTheServersNewestFirstOrdering() async throws {

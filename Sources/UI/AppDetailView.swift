@@ -165,15 +165,27 @@ struct AppDetailView: View {
         }
     }
 
+    /// How many earlier builds the list shows.
+    ///
+    /// A display choice, and only that. The snapshot can hold more than this — the search for
+    /// a build that still installs reads past the first page when it has to — and that search
+    /// must not be shortened to whatever happens to fit on screen here.
+    private static let earlierVersionsShown = 10
+
     @ViewBuilder
     private var history: some View {
-        if app.builds.count > 1 {
+        let earlier = app.builds.dropFirst()
+        if !earlier.isEmpty {
             Section2(String(localized: "Earlier versions")) {
-                ForEach(app.builds.dropFirst()) { build in
+                ForEach(earlier.prefix(Self.earlierVersionsShown)) { build in
                     LabeledContent(build.displayVersion) {
                         Text(build.humanState).foregroundStyle(.secondary)
                     }
                     .font(.callout)
+                }
+                if earlier.count > Self.earlierVersionsShown {
+                    Text(String(localized: "\(earlier.count - Self.earlierVersionsShown) older builds"))
+                        .font(.caption).foregroundStyle(.secondary)
                 }
             }
         }

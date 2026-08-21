@@ -5,12 +5,23 @@ import Foundation
 /// Five apps fetched serially take 20 seconds, so everything goes out concurrently.
 /// Secondary fetches never throw — one app returning 404 must not stop the others from refreshing.
 enum Collector {
-    /// Builds fetched per app.
+    /// How many builds one page carries.
     ///
-    /// This feeds two different jobs: the history list, and the search for the build that is
-    /// installable right now. If the newest ten are all processing or rejected while an
-    /// eleventh is still serving, a limit of ten would hide it.
-    private static let buildFetchLimit = 25
+    /// This is a display choice: the history list does not need more than a screenful. It used
+    /// to be the whole answer to a second, unrelated question — "can anyone install anything
+    /// right now?" — and there a cap is not a display choice at all. The newest builds are
+    /// exactly the ones most likely to be stuck, so an app whose serving build sits at
+    /// position 26 was told nobody could install anything. That is the wrong answer, produced
+    /// confidently, from a number picked for the sake of a list.
+    private static let historyPageSize = 25
+
+    /// How many pages the installable-build search will read before giving up.
+    ///
+    /// Rarely reached: Apple expires a build 90 days after upload, and the results come back
+    /// newest first, so the search stops at the first expired build with nothing installable
+    /// possibly behind it. This only bounds an account with a hundred live builds.
+    private static let searchPageCeiling = 4
+
     private static let groupLimit = 50
     private static let testerLimit = 200
 
@@ -24,16 +35,13 @@ enum Collector {
         async let buildsRaw: ASCList<BuildAttributes> =
             client.get("/v1/builds?filter[app]=\(app.id)"
                        + "&filter[preReleaseVersion.platform]=IOS"
-                       + "&limit=\(buildFetchLimit)&sort=-uploadedDate")
+                       + "&limit=\(historyPageSize)&sort=-uploadedDate")
 
-        let (groupList, buildList) = try await (groupsRaw, buildsRaw)
+        let (groupList, buildPage) = try await (groupsRaw, buildsRaw)
 
         var problems: [String] = []
-        async let groupsTask = loadGroups(groupList, using: client)
-        async let buildsTask = loadBuilds(buildList, using: client)
-        var (groups, builds) = await (groupsTask, buildsTask)
-
-        problems += groups.problems + builds.problems
+        let groups = await loadGroups(groupList, using: client)
+        problems += groups.problems
 
         // Which build belongs to which group is only readable from the group side.
         // (The build → betaGroups relationship does not allow GET_RELATED.)
@@ -42,11 +50,11 @@ enum Collector {
         // A group whose attachments could not be read makes every build's attachment list
         // incomplete. Leaving it nil keeps "unread" from masquerading as "attached to nothing".
         let assignmentsComplete = assignment.value.count == groups.value.count
-        for index in builds.value.indices {
-            builds.value[index].assignedGroupIDs = assignmentsComplete
-                ? assignment.value.filter { $0.value.contains(builds.value[index].id) }.map(\.key)
-                : nil
-        }
+
+        let builds = await loadBuildsUntilSomethingInstalls(
+            from: buildPage, groups: groups.value, assignments: assignment.value,
+            assignmentsComplete: assignmentsComplete, using: client)
+        problems += builds.problems
 
         return AppSnapshot(
             id: app.id,
@@ -56,6 +64,68 @@ enum Collector {
             builds: builds.value,
             fetchedAt: Date(),
             partialErrors: problems)
+    }
+
+    /// Reads build pages until something installs, the list runs out, or nothing older could
+    /// install anyway.
+    ///
+    /// Extra pages are only read when the first one answered "nobody can install anything",
+    /// which is the rare case, so the common refresh costs exactly what it did before.
+    private static func loadBuildsUntilSomethingInstalls(
+        from firstPage: ASCList<BuildAttributes>,
+        groups: [GroupSnapshot],
+        assignments: [String: Set<String>],
+        assignmentsComplete: Bool,
+        using client: ASCClient
+    ) async -> Partial<[BuildSnapshot]> {
+        var collected: [BuildSnapshot] = []
+        var problems: [String] = []
+        var pending: ASCList<BuildAttributes>? = firstPage
+        var pagesRead = 0
+        var gaveUp = false
+
+        while let page = pending {
+            pending = nil
+            pagesRead += 1
+
+            var resolved = await loadBuilds(page, using: client)
+            problems += resolved.problems
+            attach(assignments, complete: assignmentsComplete, to: &resolved.value)
+            collected += resolved.value
+
+            // Someone can install something. Nothing older changes that answer.
+            if RuleEngine.currentlyTestable(groups: groups, builds: collected) != nil { break }
+            // TestFlight builds stop installing 90 days after upload and these come back
+            // newest first, so once a page ends on an expired build there is nothing
+            // installable further back. Apple's own rule ends the search, not a cap.
+            if page.data.last?.attributes.expired == true { break }
+            // No further pages: "nothing installs" is now a read fact rather than a guess.
+            guard let cursor = page.links?.next else { break }
+            guard pagesRead < searchPageCeiling else { gaveUp = true; break }
+
+            do {
+                pending = try await client.get(cursor, as: ASCList<BuildAttributes>.self)
+            } catch {
+                gaveUp = true
+            }
+        }
+
+        // Stopped without an answer. Saying "nothing installs" here would be the same mistake
+        // the cap made, one page further along.
+        if gaveUp {
+            problems.append(String(localized: "Couldn't look past the \(collected.count) newest builds for one that still installs."))
+        }
+        return Partial(value: collected, problems: problems)
+    }
+
+    private static func attach(_ assignments: [String: Set<String>], complete: Bool,
+                               to builds: inout [BuildSnapshot])
+    {
+        for index in builds.indices {
+            builds[index].assignedGroupIDs = complete
+                ? assignments.filter { $0.value.contains(builds[index].id) }.map(\.key)
+                : nil
+        }
     }
 
     /// Carries a value together with whatever went wrong while producing it.
